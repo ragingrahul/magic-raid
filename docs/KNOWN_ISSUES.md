@@ -141,17 +141,30 @@ Mitigation:
 Escalate if:
 - UI changes hide or blur MagicBlock, AI, or Solana proof points.
 
-## KI-010: Local Toolchain Is Missing
+## KI-010: Toolchain Requires Interactive Login Shell
 
-Severity: high.
-Status: open.
+Severity: low.
+Status: resolved with command convention.
 
-Issue: this terminal has Codex's bundled `node` binary, but no package manager or Solana/Rust/Anchor toolchain on PATH. `npm`, `npx`, `yarn`, `pnpm`, `corepack`, `solana`, `rustc`, `cargo`, and `anchor` were not found.
+Issue: plain non-interactive Codex PATH only exposes Codex's bundled `node`, but the project folder's interactive login shell exposes the installed package manager and Solana/Rust/Anchor toolchain.
 
 Mitigation:
-- Install or expose a project package manager before `APP-001`.
-- Install or expose Rust/Cargo, Solana CLI, and Anchor CLI before `SOL-001`.
-- After installation, rerun the version checks in `docs/MAGICBLOCK_VERIFICATION.md`.
+- Run toolchain commands with `zsh -lic '...'`.
+- Use the versions recorded in `docs/MAGICBLOCK_VERIFICATION.md`.
 
 Escalate if:
-- The user wants Codex to install these tools, because that requires network access and changes outside the repo.
+- A command fails even through `zsh -lic`.
+
+## KI-011: Solana Web3 Optional Peer Warning
+
+Severity: low.
+Status: open.
+
+Issue: `pnpm install` reports an optional transitive peer warning under `@solana/web3.js`: `ws@7.5.13` expects `utf-8-validate@^5.0.2`, while another installed version is `6.0.6`.
+
+Mitigation:
+- Do not add a workaround unless runtime WebSocket behaviour fails.
+- Recheck during the first MagicBlock client smoke test in `MB-002`.
+
+Escalate if:
+- Magic Router or Solana websocket subscriptions fail in the browser or tests.

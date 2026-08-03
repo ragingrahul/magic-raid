@@ -32,8 +32,8 @@ Assessment: the project is in bootstrap planning state. No application code has 
 | `PLAN-001` | Complete | Planning docs drafted from `prompts/bootstrap.md`. |
 | `PLAN-002` | Complete | Specialist prompt files drafted. |
 | `MB-001` | Complete for planning | Official docs, endpoints, package names, package versions, and local toolchain availability recorded in `docs/MAGICBLOCK_VERIFICATION.md`. |
-| `APP-001` | Not started | Blocked until a package manager is available on PATH. |
-| `SOL-001` | Not started | Blocked until Rust/Cargo, Solana CLI, and Anchor CLI are available on PATH. |
+| `APP-001` | Complete | Next.js frontend scaffold created under `frontend/`; typecheck, lint, test, and build pass. |
+| `SOL-001` | Not started | Unblocked; run Rust/Solana/Anchor commands through `zsh -lic`. |
 | Game, AI, networking, settlement, QA, demo tasks | Not started | Await scaffold and API verification. |
 
 ## Repository Assessment Commands Run
@@ -79,9 +79,17 @@ Bootstrap consistency review:
 - Confirmed ER devnet Asia `getVersion` reports MagicBlock core `0.13.19`.
 - Corrected Asia validator key to `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`.
 
+`APP-001` verification:
+- Created Next.js App Router scaffold in `frontend/`.
+- Configured TypeScript strict mode, Tailwind CSS, Phaser 3, Zod, Vitest, ESLint, and MagicBlock ER SDK.
+- Added a client-side Phaser 3 runtime probe.
+- Added Zod schemas for the first raid summary contract.
+- Added Vitest smoke tests for schemas and MagicBlock constants.
+- Production build required escalation because Turbopack tried to bind a local port inside the sandbox; the escalated build passed.
+
 ## Immediate Next Step
 
-Resolve local toolchain blocker, then start `APP-001` and `SOL-001`.
+Start `SOL-001`. In this Codex environment, run toolchain commands through `zsh -lic`.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.
@@ -102,9 +110,55 @@ Verified package choices:
 - `session-keys@3.1.1`
 - `@magicblock-labs/gum-react-sdk@3.0.10`
 
-Local toolchain blocker:
-- `node` exists at `/Applications/Codex.app/Contents/Resources/node` and reports `v24.14.0`.
-- `npm`, `npx`, `yarn`, `pnpm`, `corepack`, `solana`, `rustc`, `cargo`, and `anchor` are not on PATH.
+Installed frontend package versions:
+- `next@16.2.12`
+- `react@18.2.0`
+- `react-dom@18.2.0`
+- `typescript@5.9.3`
+- `tailwindcss@4.3.3`
+- `@tailwindcss/postcss@4.3.3`
+- `phaser@3.90.0`
+- `zod@4.4.3`
+- `vitest@4.1.10`
+- `vite@8.2.0`
+- `eslint@9.39.5`
+- `eslint-config-next@16.2.12`
+- `@magicblock-labs/ephemeral-rollups-sdk@0.16.2`
+- `@solana/web3.js@1.98.4`
+
+Dependency notes:
+- Phaser is pinned to `3.90.0` because the project explicitly requires Phaser 3, while the current `phaser` latest tag is 4.x.
+- React is pinned to `18.2.0` to preserve compatibility with the verified future Session Keys frontend package `@magicblock-labs/gum-react-sdk@3.0.10`.
+- `@magicblock-labs/gum-react-sdk@3.0.10` is verified but deferred until Session Keys work begins.
+- ESLint is pinned to `9.39.5` because Next's lint config plugins do not yet accept ESLint 10.
+
+Frontend verification commands:
+- `zsh -lic 'pnpm install --store-dir .pnpm-store'`
+- `zsh -lic 'pnpm run typecheck'`
+- `zsh -lic 'pnpm run lint'`
+- `zsh -lic 'pnpm run test'`
+- `zsh -lic 'pnpm run build'`
+- `zsh -lic 'pnpm exec next dev --port 3000'`
+- `curl -L http://localhost:3000`
+
+Frontend smoke result:
+- Dev server started at `http://localhost:3000`.
+- `curl -L http://localhost:3000` returned the scaffold page.
+
+Local toolchain:
+- Plain non-interactive Codex PATH only exposes Codex's bundled `node`.
+- The project folder's interactive login shell exposes the installed toolchain through `zsh -lic`.
+- `node`: `v22.14.0`.
+- `npm`: `10.9.2`.
+- `npx`: `10.9.2`.
+- `pnpm`: `10.33.0`.
+- `yarn`: `1.22.22`.
+- `rustc`: `rustc 1.94.0 (4a4ef493e 2026-03-02)`.
+- `cargo`: `cargo 1.94.0 (85eff7c80 2026-01-15)`.
+- `solana`: `solana-cli 2.1.21`.
+- `anchor`: `anchor-cli 0.31.1`.
+- `avm`: `avm 0.31.1`.
+- `corepack`: `0.31.0`.
 
 ## Demo Script Placeholder
 

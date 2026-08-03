@@ -146,6 +146,8 @@ The hackathon demo is successful when:
 
 `MB-001` is complete for planning; see `docs/MAGICBLOCK_VERIFICATION.md`.
 
-Next unblock the local toolchain known issue KI-010, then begin:
-- `APP-001`: scaffold the Next.js frontend workspace.
+Next begin:
 - `SOL-001`: scaffold the Anchor settlement workspace.
+- `GAME-001`: expand the shared game schemas after the Anchor skeleton is in place.
+
+Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`.

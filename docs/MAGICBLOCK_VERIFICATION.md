@@ -130,6 +130,23 @@ For this project:
 Commands run:
 
 ```bash
+zsh -lic 'node --version'
+zsh -lic 'npm --version'
+zsh -lic 'npx --version'
+zsh -lic 'pnpm --version'
+zsh -lic 'yarn --version'
+zsh -lic 'rustc --version'
+zsh -lic 'cargo --version'
+zsh -lic 'solana --version'
+zsh -lic 'anchor --version'
+zsh -lic 'avm --version'
+zsh -lic 'corepack --version'
+zsh -lic 'which node; which npm; which pnpm; which rustc; which cargo; which solana; which anchor'
+```
+
+Initial non-interactive checks also ran:
+
+```bash
 solana --version
 rustc --version
 anchor --version
@@ -146,22 +163,45 @@ which solana
 ```
 
 Observed:
-- `node` is available at `/Applications/Codex.app/Contents/Resources/node`.
-- `node --version` returned `v24.14.0`.
-- `solana`, `rustc`, `cargo`, `anchor`, `npm`, `npx`, `yarn`, `pnpm`, and `corepack` are not on PATH.
+- Toolchain commands are available when run through the project folder's interactive login shell with `zsh -lic`.
+- Plain non-interactive Codex PATH only exposes Codex's bundled `node`, so future toolchain commands should use `zsh -lic '...'`.
+- `node --version`: `v22.14.0`.
+- `npm --version`: `10.9.2`.
+- `npx --version`: `10.9.2`.
+- `pnpm --version`: `10.33.0`.
+- `yarn --version`: `1.22.22`.
+- `rustc --version`: `rustc 1.94.0 (4a4ef493e 2026-03-02)`.
+- `cargo --version`: `cargo 1.94.0 (85eff7c80 2026-01-15)`.
+- `solana --version`: `solana-cli 2.1.21 (src:8a085eeb; feat:1416569292, client:Agave)`.
+- `anchor --version`: `anchor-cli 0.31.1`.
+- `avm --version`: `avm 0.31.1`.
+- `corepack --version`: `0.31.0`.
+- `node`: `/Users/rahulrajsarma/.nvm/versions/node/v22.14.0/bin/node`.
+- `npm`: `/Users/rahulrajsarma/.nvm/versions/node/v22.14.0/bin/npm`.
+- `pnpm`: `/opt/homebrew/bin/pnpm`.
+- `rustc`: `/Users/rahulrajsarma/.cargo/bin/rustc`.
+- `cargo`: `/Users/rahulrajsarma/.cargo/bin/cargo`.
+- `solana`: `/Users/rahulrajsarma/.local/share/solana/install/active_release/bin/solana`.
+- `anchor`: `/Users/rahulrajsarma/.cargo/bin/anchor`.
 
 Impact:
 - MB-001 documentation verification is complete.
-- `APP-001` and `SOL-001` cannot proceed in this terminal until a package manager and Solana/Rust/Anchor toolchain are available.
+- `APP-001` and `SOL-001` can proceed if commands are invoked through `zsh -lic`.
 
 ## Recommended Scaffold Dependencies
 
-When toolchain setup is available, use:
+Use:
 
-Frontend/package dependencies:
+APP-001 frontend dependencies:
 - `@magicblock-labs/ephemeral-rollups-sdk@0.16.2`
-- `@magicblock-labs/gum-react-sdk@3.0.10`
 - `@solana/web3.js` compatible with wallet adapter and MagicBlock SDK
+
+Deferred Session Keys frontend dependency:
+- `@magicblock-labs/gum-react-sdk@3.0.10`
+
+Reason for deferral:
+- Session Keys implementation starts after basic ER delegation works.
+- Installing `gum-react-sdk` during APP-001 pulled a React Native peer chain that is unnecessary before Session Keys are wired.
 
 Rust dependencies:
 - `ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor"] }`
@@ -170,14 +210,14 @@ Rust dependencies:
 Local development tool:
 - `@magicblock-labs/ephemeral-validator@0.13.19`
 
-Final Anchor version should be chosen during `SOL-001` after installing `anchor`, because the current docs mention Anchor `1.0.2` while `ephemeral-rollups-sdk@0.16.2` supports both modern and compatibility Anchor feature paths.
+Final Anchor dependency compatibility should be verified during `SOL-001`, because the local CLI is `anchor-cli 0.31.1` while the current MagicBlock docs mention Anchor `1.0.2` and `ephemeral-rollups-sdk@0.16.2` supports both modern and compatibility Anchor feature paths.
 
 ## MB-001 Result
 
 Status: complete for planning and API/package verification.
 
-Remaining blocker before implementation:
-- Install or expose `npm`/package manager, Rust/Cargo, Solana CLI, and Anchor CLI in the terminal.
+Implementation note:
+- Use `zsh -lic '...'` for Node, package manager, Rust, Cargo, Solana, and Anchor commands in this Codex environment.
 
-Next task after toolchain setup:
-- `APP-001` for frontend scaffold and `SOL-001` for Anchor scaffold can start in parallel only after the required tools are available.
+Next task:
+- `SOL-001` for Anchor scaffold.
