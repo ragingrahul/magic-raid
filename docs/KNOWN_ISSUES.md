@@ -54,7 +54,7 @@ Escalate if:
 ## KI-004: One-Week Solo Scope Is Tight
 
 Severity: medium.
-Status: open.
+Status: open, mitigated.
 
 Issue: real-time multiplayer, MagicBlock, AI integration, Solana settlement, and demo polish are a lot for one developer in seven days.
 
@@ -76,9 +76,9 @@ Status: open.
 Issue: LLM calls can time out, return invalid JSON, hit rate limits, or fail due to missing secrets.
 
 Mitigation:
-- Implement deterministic fallback in `AI-002`.
-- Validate every response with Zod.
-- Show fallback status honestly in the debug panel.
+- Deterministic fallback is implemented in `AI-002`.
+- Every strategy response is validated with Zod.
+- The `AI Strategy` panel shows whether the last decision came from the LLM or fallback.
 
 Escalate if:
 - The LLM cannot be called from the intended deployment environment.
@@ -86,7 +86,7 @@ Escalate if:
 ## KI-006: Real-Time Synchronization May Be Imperfect
 
 Severity: medium.
-Status: open.
+Status: open, partially mitigated.
 
 Issue: perfect physics synchronization is out of scope, but poor synchronization could weaken the demo.
 
@@ -121,7 +121,7 @@ Status: open.
 Issue: LLM API keys, Solana RPC URLs, MagicBlock configuration, and Vercel environment variables are not defined.
 
 Mitigation:
-- Create documented `.env.example` during scaffold.
+- `frontend/.env.example` documents the server-side OpenAI strategy variables.
 - Never commit secrets.
 - Add deployment checklist under `DEMO-001`.
 
@@ -136,7 +136,7 @@ Status: open.
 Issue: judges may miss the distinction between local rendering, MagicBlock authority, AI strategy, and Solana settlement unless the UI makes them visible.
 
 Mitigation:
-- Build `WEB-003` analytics and strategy panel.
+- `WEB-003` analytics and strategy panel is implemented.
 - Add settlement status UI.
 - Use `DEMO-001` script to call out proof points.
 

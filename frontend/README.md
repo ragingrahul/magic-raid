@@ -14,6 +14,16 @@ zsh -lic 'pnpm run test'
 zsh -lic 'pnpm run dev'
 ```
 
+## Environment
+
+Copy `.env.example` to `.env.local` for local development and set `OPENAI_API_KEY`.
+Keep the key server-side only; do not prefix it with `NEXT_PUBLIC_`.
+
+Optional strategy settings:
+
+- `OPENAI_STRATEGY_MODEL`: defaults to `gpt-5.6`.
+- `OPENAI_STRATEGY_TIMEOUT_MS`: defaults to `2500`.
+
 ## Stack
 
 - Next.js `16.2.12`

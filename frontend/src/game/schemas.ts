@@ -15,6 +15,12 @@ export const GAME_LIMITS = {
     durationSeconds: 180,
     maxRecentWindowSeconds: 30
   },
+  ai: {
+    maxStrategyAdaptations: 2,
+    strategyDecisionCooldownMs: 8_000,
+    strategyAdaptationCooldownMs: 12_000,
+    requestTimeoutMs: 2_500
+  },
   boss: {
     maxHp: 1200,
     phaseTwoHpPercent: 0.66,
@@ -342,6 +348,44 @@ export const DamageByTypeSchema = z
   })
   .strict();
 
+export const RaidAnalyticsSignalsSchema = z
+  .object({
+    clusteredPlayers: z.boolean(),
+    rangedDominance: z.boolean(),
+    magicDominance: z.boolean(),
+    frequentHealing: z.boolean(),
+    meleeDominance: z.boolean()
+  })
+  .strict();
+
+export const RaidAnalyticsEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("player_damage"),
+      atMs: z.number().int().min(0),
+      playerId: EntityIdSchema,
+      playerClass: PlayerClassSchema,
+      damageType: DamageTypeSchema,
+      damage: z.number().int().min(0).max(GAME_LIMITS.attacks.maxHitDamage)
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("player_heal"),
+      atMs: z.number().int().min(0),
+      playerId: EntityIdSchema,
+      amount: z.number().int().min(0).max(GAME_LIMITS.player.maxHp)
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("player_downed"),
+      atMs: z.number().int().min(0),
+      playerId: EntityIdSchema
+    })
+    .strict()
+]);
+
 export const RaidAnalyticsSummarySchema = z
   .object({
     raidId: EntityIdSchema,
@@ -366,7 +410,8 @@ export const RaidAnalyticsSummarySchema = z
     currentStrategy: BossStrategySchema,
     timeRemainingSeconds: z.number().int().min(0).max(GAME_LIMITS.raid.durationSeconds),
     dominantClass: PlayerClassSchema.nullable(),
-    dominantDamageType: DamageTypeSchema.nullable()
+    dominantDamageType: DamageTypeSchema.nullable(),
+    signals: RaidAnalyticsSignalsSchema
   })
   .strict();
 
@@ -378,6 +423,25 @@ export const BossStrategyDecisionSchema = z
     confidence: z.number().finite().min(0).max(1),
     source: z.enum(["llm", "fallback"]),
     createdAtMs: z.number().int().min(0)
+  })
+  .strict();
+
+export const RoomStrategyRequestSchema = z
+  .object({
+    playerId: EntityIdSchema
+  })
+  .strict();
+
+export const RoomStrategyUpdateSchema = z
+  .object({
+    snapshot: RaidSnapshotSchema,
+    analytics: RaidAnalyticsSummarySchema,
+    lastDecision: BossStrategyDecisionSchema.optional(),
+    adaptationCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(GAME_LIMITS.ai.maxStrategyAdaptations)
   })
   .strict();
 
@@ -452,8 +516,12 @@ export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
 export type JoinRoomRequest = z.infer<typeof JoinRoomRequestSchema>;
 export type RoomProfileUpdateRequest = z.infer<typeof RoomProfileUpdateRequestSchema>;
 export type RoomSession = z.infer<typeof RoomSessionSchema>;
+export type RaidAnalyticsSignals = z.infer<typeof RaidAnalyticsSignalsSchema>;
+export type RaidAnalyticsEvent = z.infer<typeof RaidAnalyticsEventSchema>;
 export type RaidAnalyticsSummary = z.infer<typeof RaidAnalyticsSummarySchema>;
 export type BossStrategyDecision = z.infer<typeof BossStrategyDecisionSchema>;
+export type RoomStrategyRequest = z.infer<typeof RoomStrategyRequestSchema>;
+export type RoomStrategyUpdate = z.infer<typeof RoomStrategyUpdateSchema>;
 export type SettlementContribution = z.infer<typeof SettlementContributionSchema>;
 export type SettlementSummary = z.infer<typeof SettlementSummarySchema>;
 export type RaidSummary = z.infer<typeof RaidSummarySchema>;

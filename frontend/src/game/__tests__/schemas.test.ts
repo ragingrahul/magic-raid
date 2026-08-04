@@ -16,6 +16,7 @@ import {
   RaidClientMessageSchema,
   RaidSnapshotSchema,
   RaidSummarySchema,
+  RoomStrategyUpdateSchema,
   SettlementSummarySchema
 } from "@/game/schemas";
 
@@ -189,7 +190,14 @@ describe("shared game schemas", () => {
       currentStrategy: "area_denial",
       timeRemainingSeconds: 90,
       dominantClass: "ranger",
-      dominantDamageType: "ranged"
+      dominantDamageType: "ranged",
+      signals: {
+        clusteredPlayers: true,
+        rangedDominance: true,
+        magicDominance: false,
+        frequentHealing: true,
+        meleeDominance: false
+      }
     });
 
     const decision = BossStrategyDecisionSchema.parse({
@@ -202,6 +210,37 @@ describe("shared game schemas", () => {
     });
 
     expect(decision.strategy).toBe("leap_to_ranged");
+
+    const strategyUpdate = RoomStrategyUpdateSchema.parse({
+      snapshot: {
+        raidId: "raid-demo",
+        roomCode: "RAID42",
+        status: "active",
+        tick: 12,
+        serverTimeMs: 10_000,
+        elapsedSeconds: 45,
+        players: [playerState],
+        boss: {
+          id: "boss-1",
+          hp: 1_075,
+          maxHp: GAME_LIMITS.boss.maxHp,
+          phase: "phase_1",
+          strategy: "leap_to_ranged",
+          position: {
+            x: GAME_LIMITS.arena.width / 2,
+            y: GAME_LIMITS.arena.height / 2
+          },
+          attackReadyAtMs: bossAttackReadyAtMs,
+          nextAttackReadyAtMs: 12_000
+        },
+        attacks: []
+      },
+      analytics,
+      lastDecision: decision,
+      adaptationCount: 1
+    });
+
+    expect(strategyUpdate.lastDecision?.source).toBe("llm");
   });
 
   it("validates settlement summaries and score bounds", () => {

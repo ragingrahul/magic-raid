@@ -2,24 +2,41 @@ import {
   CreateRoomRequestSchema,
   GAME_LIMITS,
   JoinRoomRequestSchema,
+  RaidAnalyticsEventSchema,
   RaidClientMessageSchema,
   RaidSnapshotMessageSchema,
   RaidSnapshotSchema,
   RoomCodeSchema,
   RoomProfileUpdateRequestSchema,
+  RoomStrategyRequestSchema,
+  RoomStrategyUpdateSchema,
+  type BossStrategyDecision,
+  type RaidAnalyticsEvent,
+  type RaidAnalyticsSummary,
   type PlayerState,
   type RaidClientMessage,
   type RaidSnapshot,
   type RoomProfile,
   type RoomProfileUpdateRequest,
-  type RoomSession
+  type RoomSession,
+  type RoomStrategyUpdate
 } from "@/game/schemas";
 import {
   advanceBoss,
   applyPlayerAttack,
   createLocalRaidSnapshot,
-  movePlayer
+  movePlayer,
+  PLAYER_ATTACK_DEFINITIONS,
+  setBossStrategy
 } from "@/game/rules";
+import {
+  pruneAnalyticsEvents,
+  summarizeRaidAnalytics
+} from "@/game/analytics";
+import {
+  selectBossStrategyDecision,
+  type StrategySelectionOptions
+} from "@/game/ai-strategy";
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEFAULT_MOVE_DELTA_MS = 90;
@@ -31,10 +48,21 @@ const PLAYER_STARTS = [
   { x: 310, y: GAME_LIMITS.arena.height / 2 + 8 }
 ] as const;
 
+type StrategyDecisionSelector = (
+  analytics: RaidAnalyticsSummary,
+  options?: StrategySelectionOptions
+) => Promise<BossStrategyDecision>;
+
 export type RoomAuthorityState = {
   roomCode: string;
   createdAtUnixMs: number;
   snapshot: RaidSnapshot;
+  analyticsEvents: RaidAnalyticsEvent[];
+  lastAnalytics?: RaidAnalyticsSummary;
+  lastStrategyDecision?: BossStrategyDecision;
+  strategyAdaptationCount: number;
+  lastStrategyDecisionAtMs?: number;
+  lastStrategyAdaptationAtMs?: number;
   lastInputSequenceByPlayer: Record<string, number>;
   lastMoveAtMsByPlayer: Record<string, number>;
   nextPlayerNumber: number;
@@ -93,16 +121,21 @@ export function createRoomAuthority(
   snapshot.tick = 0;
   snapshot.status = "active";
 
-  return {
+  const room: RoomAuthorityState = {
     roomCode,
     createdAtUnixMs: options.nowUnixMs ?? Date.now(),
     snapshot: RaidSnapshotSchema.parse(snapshot),
+    analyticsEvents: [],
+    strategyAdaptationCount: 0,
     lastInputSequenceByPlayer: {},
     lastMoveAtMsByPlayer: {
       [firstPlayer.id]: 0
     },
     nextPlayerNumber: 2
   };
+
+  refreshRoomAnalytics(room, 0);
+  return room;
 }
 
 export function joinRoomAuthority(
@@ -133,6 +166,7 @@ export function joinRoomAuthority(
     ...room.snapshot,
     tick: Math.min(GAME_LIMITS.networking.maxSnapshotTick, room.snapshot.tick + 1)
   });
+  refreshRoomAnalytics(room, roomTimeMs(room, nowUnixMs));
 
   return roomSession(room, player.id);
 }
@@ -180,12 +214,24 @@ export function applyRoomInput(
     room.snapshot = movePlayer(room.snapshot, message.playerId, message.direction, deltaMs);
     room.lastMoveAtMsByPlayer[message.playerId] = nowMs;
   } else if (message.type === "player_attack") {
-    room.snapshot = applyPlayerAttack(
+    const result = applyPlayerAttack(
       room.snapshot,
       message.playerId,
       message.attack,
       nowMs
-    ).snapshot;
+    );
+    room.snapshot = result.snapshot;
+
+    if (result.applied && result.damage > 0) {
+      recordAnalyticsEvent(room, {
+        type: "player_damage",
+        atMs: nowMs,
+        playerId: message.playerId,
+        playerClass: player.class,
+        damageType: PLAYER_ATTACK_DEFINITIONS[player.class][message.attack].damageType,
+        damage: result.damage
+      });
+    }
   } else {
     player.class = message.playerClass;
     player.normalAttackReadyAtMs = nowMs;
@@ -196,6 +242,7 @@ export function applyRoomInput(
     });
   }
 
+  refreshRoomAnalytics(room, nowMs);
   return raidSnapshotMessage(room.snapshot).snapshot;
 }
 
@@ -212,6 +259,7 @@ export function updateRoomProfile(
     ...room.snapshot,
     tick: Math.min(GAME_LIMITS.networking.maxSnapshotTick, room.snapshot.tick + 1)
   });
+  refreshRoomAnalytics(room, roomTimeMs(room, nowUnixMs));
   return roomSession(room, update.playerId);
 }
 
@@ -220,10 +268,53 @@ export function advanceRoomAuthority(
   nowUnixMs = Date.now()
 ): RaidSnapshot {
   if (room.snapshot.status === "active") {
-    room.snapshot = advanceBoss(room.snapshot, roomTimeMs(room, nowUnixMs)).snapshot;
+    const nowMs = roomTimeMs(room, nowUnixMs);
+    const before = room.snapshot;
+    const result = advanceBoss(room.snapshot, nowMs);
+    room.snapshot = result.snapshot;
+    recordNewlyDownedPlayers(room, before, room.snapshot, nowMs);
   }
 
+  refreshRoomAnalytics(room, roomTimeMs(room, nowUnixMs));
   return raidSnapshotMessage(room.snapshot).snapshot;
+}
+
+export async function adaptRoomStrategy(
+  room: RoomAuthorityState,
+  rawRequest: unknown,
+  nowUnixMs = Date.now(),
+  strategySelector: StrategyDecisionSelector = selectBossStrategyDecision
+): Promise<RoomStrategyUpdate> {
+  const request = RoomStrategyRequestSchema.parse(rawRequest);
+  requirePlayer(room.snapshot, request.playerId);
+  advanceRoomAuthority(room, nowUnixMs);
+
+  const nowMs = roomTimeMs(room, nowUnixMs);
+  const analytics = refreshRoomAnalytics(room, nowMs);
+
+  if (
+    room.snapshot.status === "active" &&
+    canRequestStrategyDecision(room, nowMs)
+  ) {
+    room.lastStrategyDecisionAtMs = nowMs;
+    const decision = await strategySelector(analytics, {
+      createdAtMs: nowMs
+    });
+    room.lastStrategyDecision = decision;
+
+    if (canApplyStrategyDecision(room, decision, nowMs)) {
+      room.snapshot = setBossStrategy(room.snapshot, decision.strategy);
+      room.strategyAdaptationCount += 1;
+      room.lastStrategyAdaptationAtMs = nowMs;
+      room.snapshot = RaidSnapshotSchema.parse({
+        ...room.snapshot,
+        tick: Math.min(GAME_LIMITS.networking.maxSnapshotTick, room.snapshot.tick + 1)
+      });
+      refreshRoomAnalytics(room, nowMs);
+    }
+  }
+
+  return roomStrategyUpdate(room);
 }
 
 export function raidSnapshotMessage(snapshot: RaidSnapshot) {
@@ -239,6 +330,18 @@ function roomSession(room: RoomAuthorityState, playerId: string): RoomSession {
     playerId,
     snapshot: raidSnapshotMessage(room.snapshot).snapshot
   };
+}
+
+function roomStrategyUpdate(room: RoomAuthorityState): RoomStrategyUpdate {
+  const analytics =
+    room.lastAnalytics ?? summarizeRaidAnalytics(room.snapshot, room.analyticsEvents);
+
+  return RoomStrategyUpdateSchema.parse({
+    snapshot: raidSnapshotMessage(room.snapshot).snapshot,
+    analytics,
+    lastDecision: room.lastStrategyDecision,
+    adaptationCount: room.strategyAdaptationCount
+  });
 }
 
 function createRoomPlayer(
@@ -308,6 +411,76 @@ function roomTimeMs(room: RoomAuthorityState, nowUnixMs: number): number {
 
 export function parseRaidClientMessage(rawMessage: unknown): RaidClientMessage {
   return RaidClientMessageSchema.parse(rawMessage);
+}
+
+function refreshRoomAnalytics(
+  room: RoomAuthorityState,
+  nowMs: number
+): RaidAnalyticsSummary {
+  room.analyticsEvents = pruneAnalyticsEvents(room.analyticsEvents, nowMs);
+  room.lastAnalytics = summarizeRaidAnalytics(room.snapshot, room.analyticsEvents, {
+    nowMs
+  });
+  return room.lastAnalytics;
+}
+
+function recordAnalyticsEvent(
+  room: RoomAuthorityState,
+  rawEvent: RaidAnalyticsEvent
+) {
+  const event = RaidAnalyticsEventSchema.parse(rawEvent);
+  room.analyticsEvents = pruneAnalyticsEvents([...room.analyticsEvents, event], event.atMs);
+}
+
+function recordNewlyDownedPlayers(
+  room: RoomAuthorityState,
+  previous: RaidSnapshot,
+  next: RaidSnapshot,
+  nowMs: number
+) {
+  for (const player of next.players) {
+    const previousPlayer = previous.players.find((candidate) => candidate.id === player.id);
+    if (previousPlayer?.status === "alive" && player.status === "downed") {
+      recordAnalyticsEvent(room, {
+        type: "player_downed",
+        atMs: nowMs,
+        playerId: player.id
+      });
+    }
+  }
+}
+
+function canRequestStrategyDecision(
+  room: RoomAuthorityState,
+  nowMs: number
+): boolean {
+  return (
+    room.lastStrategyDecisionAtMs === undefined ||
+    nowMs - room.lastStrategyDecisionAtMs >= GAME_LIMITS.ai.strategyDecisionCooldownMs
+  );
+}
+
+function canApplyStrategyDecision(
+  room: RoomAuthorityState,
+  decision: BossStrategyDecision,
+  nowMs: number
+): boolean {
+  if (room.snapshot.status !== "active") {
+    return false;
+  }
+
+  if (decision.strategy === room.snapshot.boss.strategy) {
+    return false;
+  }
+
+  if (room.strategyAdaptationCount >= GAME_LIMITS.ai.maxStrategyAdaptations) {
+    return false;
+  }
+
+  return (
+    room.lastStrategyAdaptationAtMs === undefined ||
+    nowMs - room.lastStrategyAdaptationAtMs >= GAME_LIMITS.ai.strategyAdaptationCooldownMs
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

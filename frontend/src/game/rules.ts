@@ -12,6 +12,7 @@ import {
   type PlayerClass,
   type PlayerContribution,
   type Position,
+  type RaidStatus,
   type RaidSnapshot
 } from "@/game/schemas";
 
@@ -57,6 +58,8 @@ export type BossAttackDefinition = {
   indicatorDurationMs: number;
   shieldDurationMs?: number;
 };
+
+export const TERMINAL_RAID_STATUSES = ["victory", "defeat", "timeout", "settled"] as const;
 
 export const PLAYER_ATTACK_DEFINITIONS: Record<
   PlayerClass,
@@ -529,8 +532,16 @@ export function setBossStrategy(
   strategy: BossStrategy
 ): RaidSnapshot {
   const next = cloneSnapshot(snapshot);
+  if (next.status !== "active") {
+    return next;
+  }
+
   next.boss.strategy = strategy;
   return next;
+}
+
+export function isTerminalRaidStatus(status: RaidStatus): boolean {
+  return TERMINAL_RAID_STATUSES.includes(status as (typeof TERMINAL_RAID_STATUSES)[number]);
 }
 
 export function distance(first: Position, second: Position): number {
@@ -576,6 +587,10 @@ function tick(snapshot: RaidSnapshot, nowMs: number): RaidSnapshot {
     snapshot.status = "timeout";
   }
 
+  if (isTerminalRaidStatus(snapshot.status)) {
+    finalizeContributionScores(snapshot);
+  }
+
   return snapshot;
 }
 
@@ -601,6 +616,59 @@ function addContributionDamage(
     damage: nextDamage,
     total
   };
+}
+
+function finalizeContributionScores(snapshot: RaidSnapshot) {
+  const totalDamage = snapshot.players.reduce(
+    (sum, player) => sum + player.contribution.damage,
+    0
+  );
+  const bossDamageTaken = snapshot.boss.maxHp - snapshot.boss.hp;
+  const objectiveProgress = snapshot.boss.maxHp === 0 ? 0 : bossDamageTaken / snapshot.boss.maxHp;
+
+  for (const player of snapshot.players) {
+    const damage = clampInteger(player.contribution.damage, 0, GAME_LIMITS.scoring.maxComponent);
+    const damageShare = totalDamage === 0 ? 0 : damage / totalDamage;
+    const hpRatio = player.maxHp === 0 ? 0 : player.hp / player.maxHp;
+    const nearbyAllies = snapshot.players.filter(
+      (otherPlayer) =>
+        otherPlayer.id !== player.id &&
+        otherPlayer.status === "alive" &&
+        distance(player.position, otherPlayer.position) <= 220
+    ).length;
+
+    const support = clampInteger(
+      Math.round(nearbyAllies * 850 + (1 - damageShare) * 1_500),
+      0,
+      GAME_LIMITS.scoring.maxComponent
+    );
+    const survival = clampInteger(
+      player.status === "alive" ? Math.round(2_000 + hpRatio * 7_500) : 0,
+      0,
+      GAME_LIMITS.scoring.maxComponent
+    );
+    const objective = clampInteger(
+      Math.round(
+        objectiveProgress * 4_000 +
+          (snapshot.status === "victory" ? 4_500 : snapshot.status === "timeout" ? 1_000 : 0) +
+          damageShare * 1_500
+      ),
+      0,
+      GAME_LIMITS.scoring.maxComponent
+    );
+
+    player.contribution = {
+      damage,
+      support,
+      survival,
+      objective,
+      total: clampInteger(
+        damage + support + survival + objective,
+        0,
+        GAME_LIMITS.scoring.maxTotal
+      )
+    };
+  }
 }
 
 function appendAttackEvent(snapshot: RaidSnapshot, event: AttackEvent): AttackEvent[] {
@@ -691,4 +759,8 @@ function pointToward(from: Position, to: Position, stopDistance: number): Positi
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.trunc(clamp(value, min, max));
 }

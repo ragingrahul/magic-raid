@@ -8,11 +8,14 @@ import {
   RaidClientMessageSchema,
   RaidErrorMessageSchema,
   RaidSnapshotMessageSchema,
+  RoomStrategyUpdateSchema,
   RoomSessionSchema,
   SolanaAddressSchema,
+  type BossStrategyDecision,
   type PlayerAttackKind,
   type PlayerClass,
   type Position,
+  type RaidAnalyticsSummary,
   type RaidSnapshot,
   type RoomSession
 } from "@/game/schemas";
@@ -67,6 +70,10 @@ export function RaidRoom() {
   const [wallet, setWallet] = useState<WalletState | null>(null);
   const [walletStatus, setWalletStatus] = useState<WalletStatus>("idle");
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [analytics, setAnalytics] = useState<RaidAnalyticsSummary | null>(null);
+  const [lastDecision, setLastDecision] = useState<BossStrategyDecision | null>(null);
+  const [adaptationCount, setAdaptationCount] = useState(0);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
   const [copiedRoom, setCopiedRoom] = useState(false);
   const [walletLoaded, setWalletLoaded] = useState(false);
   const clientSequenceRef = useRef(0);
@@ -108,6 +115,10 @@ export function RaidRoom() {
       setRoomStatus("connected");
       setFormError(null);
       setSyncError(null);
+      setAnalytics(null);
+      setLastDecision(null);
+      setAdaptationCount(0);
+      setStrategyError(null);
     },
     [saveRoomSession]
   );
@@ -183,6 +194,57 @@ export function RaidRoom() {
       window.clearInterval(interval);
     };
   }, [fetchRoomSession, session]);
+
+  useEffect(() => {
+    if (!session || snapshot?.status !== "active") {
+      return;
+    }
+
+    const activeSession = session;
+    let cancelled = false;
+
+    async function requestStrategyUpdate() {
+      try {
+        const response = await fetch(`/api/rooms/${activeSession.roomCode}/strategy`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            playerId: activeSession.playerId
+          })
+        });
+        const payload = await parseJsonResponse(response);
+        const parsed = RoomStrategyUpdateSchema.parse(payload);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSnapshot((current) =>
+          current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
+        );
+        setAnalytics(parsed.analytics);
+        setLastDecision(parsed.lastDecision ?? null);
+        setAdaptationCount(parsed.adaptationCount);
+        setStrategyError(null);
+      } catch (error) {
+        if (!cancelled) {
+          setStrategyError(
+            error instanceof Error ? error.message : "Strategy update failed."
+          );
+        }
+      }
+    }
+
+    void requestStrategyUpdate();
+    const interval = window.setInterval(requestStrategyUpdate, 6_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [session, snapshot?.status]);
 
   useEffect(() => {
     if (!session || !walletLoaded) {
@@ -416,6 +478,10 @@ export function RaidRoom() {
     setRoomStatus("idle");
     setSyncError(null);
     setFormError(null);
+    setAnalytics(null);
+    setLastDecision(null);
+    setAdaptationCount(0);
+    setStrategyError(null);
   }
 
   const canAct = Boolean(session && snapshot?.status === "active" && roomStatus === "connected");
@@ -487,6 +553,14 @@ export function RaidRoom() {
             onDisconnect={disconnectWallet}
           />
         </section>
+
+        <AnalyticsPanel
+          snapshot={snapshot}
+          analytics={analytics}
+          lastDecision={lastDecision}
+          adaptationCount={adaptationCount}
+          strategyError={strategyError}
+        />
 
         <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between gap-3">
@@ -646,6 +720,69 @@ export function RaidRoom() {
   );
 }
 
+function AnalyticsPanel({
+  snapshot,
+  analytics,
+  lastDecision,
+  adaptationCount,
+  strategyError
+}: {
+  snapshot: RaidSnapshot | null;
+  analytics: RaidAnalyticsSummary | null;
+  lastDecision: BossStrategyDecision | null;
+  adaptationCount: number;
+  strategyError: string | null;
+}) {
+  const clusterScore = analytics ? `${Math.round(analytics.clusterScore * 100)}%` : "--";
+  const healingFrequency = analytics
+    ? analytics.signals.frequentHealing
+      ? "frequent"
+      : `${analytics.healingEvents}/${analytics.windowSeconds}s`
+    : "--";
+  const decisionLabel = lastDecision
+    ? `${formatLabel(lastDecision.strategy)} (${formatDecisionSource(lastDecision.source)})`
+    : "--";
+
+  return (
+    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">AI Strategy</h2>
+        <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+          {adaptationCount}/{GAME_LIMITS.ai.maxStrategyAdaptations}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <HudStat label="Cluster" value={clusterScore} />
+        <HudStat label="Damage Type" value={formatNullableLabel(analytics?.dominantDamageType)} />
+        <HudStat label="Class" value={formatNullableLabel(analytics?.dominantClass)} />
+        <HudStat label="Healing" value={healingFrequency} />
+        <HudStat label="Phase" value={formatLabel(snapshot?.boss.phase ?? analytics?.bossPhase)} />
+        <HudStat
+          label="Strategy"
+          value={formatLabel(snapshot?.boss.strategy ?? analytics?.currentStrategy)}
+        />
+      </div>
+
+      <div className="mt-3 rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">Last Decision</p>
+        <p className="mt-1 break-words text-sm font-semibold">{decisionLabel}</p>
+        {lastDecision ? (
+          <p className="mt-2 break-words text-xs text-muted-foreground">
+            {lastDecision.reason}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-muted-foreground">Waiting for raid telemetry.</p>
+        )}
+      </div>
+
+      {strategyError ? (
+        <p className="mt-3 text-sm font-medium text-destructive">{strategyError}</p>
+      ) : null}
+    </section>
+  );
+}
+
 function WalletControls({
   wallet,
   walletStatus,
@@ -774,6 +911,18 @@ function truncateAddress(address: string, chars = 4) {
   }
 
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
+function formatNullableLabel(value: string | null | undefined) {
+  return value ? formatLabel(value) : "mixed";
+}
+
+function formatLabel(value: string | null | undefined) {
+  return value ? value.replaceAll("_", " ") : "--";
+}
+
+function formatDecisionSource(source: BossStrategyDecision["source"]) {
+  return source === "llm" ? "OpenAI" : "fallback";
 }
 
 function generateDemoSolanaAddress() {

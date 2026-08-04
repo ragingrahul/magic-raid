@@ -4,21 +4,21 @@ This file tracks actual implementation progress and verification results. Keep i
 
 ## Current Repository Snapshot
 
-Date: 2026-08-04.
+Date: 2026-08-05.
 
 Repository contents:
 - `docs/`: planning documents.
 - `prompts/`: specialist agent prompts.
-- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 snapshot-driven raid arena, Day 4 room API routes, wallet UI, Zod schemas, Vitest, and ESLint.
+- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 snapshot-driven raid arena, room API routes, wallet UI, analytics and AI strategy panel, Zod schemas, Vitest, and ESLint.
 - `Anchor.toml` and `Cargo.toml`: Anchor/Rust workspace scaffold.
 - `programs/raid_settlement/`: Anchor settlement program skeleton.
 
 Missing:
 - No final raid-result settlement instruction beyond the `SOL-001` skeleton.
-- No AI strategy submitter, analytics panel, or final settlement UI yet.
+- No final settlement UI yet.
 - No production room backend beyond the in-memory Next route authority used for the Day 4 demo.
 
-Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-004` local gameplay, and Day 4 room sync/wallet UI pass. AI, final settlement, and production room hosting remain ahead.
+Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-005` local gameplay, Day 4 room sync/wallet UI, and Day 5 AI adaptation pass. Final settlement, MagicBlock-routed room authority, and production room hosting remain ahead.
 
 ## Task Status
 
@@ -35,14 +35,19 @@ Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaff
 | `GAME-002` | Complete | Phaser renders a snapshot-driven local arena with player movement, boss/player sprites, HP bars, attack indicators, and React action controls. |
 | `GAME-003` | Complete | Warrior, Ranger, and Mage normal/special attacks use deterministic damage, range, cooldown, damage type, and bounds. |
 | `GAME-004` | Complete | Boss phases, Cleave, Ground Slam, Leap, Arcane Shield, Marked Strike, strategy-influenced attack preference, and cooldown rules are implemented and verified. |
+| `GAME-005` | Complete | Terminal victory/defeat/timeout states finalize bounded damage, survival, support, objective, and total contribution scores; normal gameplay helpers do not mutate finalized raid state. |
 | `NET-001` | Complete | Clients submit validated inputs to the Next room authority and poll shared authoritative snapshots rendered with Phaser interpolation. |
 | `NET-002` | Complete | Saved room/player IDs recover latest snapshots on reload; invalid room codes and rejected inputs surface recoverable UI errors. |
 | `WEB-001` | Complete | Users can create a room code and another client can join it through the room form. |
 | `WEB-002` | Complete | Wallet UI supports injected Solana wallet connect when available, demo wallet fallback, address display, copy, explorer, and disconnect. |
+| `AI-001` | Complete | Deterministic analytics summaries validate recent player damage, clustered positioning, dominant class/type, healing frequency, downed players, phase, strategy, and time remaining. |
+| `AI-002` | Complete | Server-side OpenAI Responses API strategy selector sends only approved analytics, validates JSON output with Zod, and falls back deterministically for missing key, timeout, invalid JSON, unsupported strategy, or failed response. |
+| `AI-003` | Complete | Room strategy route rate-limits decisions and applies at most two validated strategy changes per raid through deterministic boss strategy rules only. |
+| `WEB-003` | Complete | Sidebar analytics panel shows cluster score, dominant damage type/class, healing frequency, boss phase, current strategy, last AI/fallback decision, and adaptation count during active raids. |
 | `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
 | `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
 | `NET-003` | Not started | Explicit follow-up for routing gameplay-critical room authority through MagicBlock instead of only the in-memory Next room authority. |
-| Remaining game, AI, settlement, QA, demo tasks | Not started | Await contribution scoring terminal polish, AI strategy, MagicBlock-routed room authority, final settlement flow, and demo hardening. |
+| Remaining settlement, QA, demo tasks | Not started | Await MagicBlock-routed room authority, final settlement flow, broader QA, and demo hardening. |
 
 ## Repository Assessment Commands Run
 
@@ -247,9 +252,27 @@ Latest live lifecycle result:
 - `initialize_raid`, `delegate_raid`, router-routed `apply_player_hit`, `commit_and_undelegate_raid`, router undelegation check, and final devnet account readback all passed.
 - Because `RaidState` currently uses a single fixed seed, rerunning the live smoke reuses the existing PDA instead of creating a fresh raid account.
 
+Day 5 AI adaptation implementation:
+- Added deterministic terminal scoring for `GAME-005`: contribution totals now include bounded damage, support, survival, and objective components when a raid reaches victory, defeat, or timeout.
+- Added `frontend/src/game/analytics.ts` for validated recent-window analytics: cluster score, average pairwise distance, damage by class/type, dominant class/type, healing frequency, downed players, boss phase, current strategy, and time remaining.
+- Added `frontend/src/game/ai-strategy.ts` for OpenAI Responses API structured JSON strategy selection, Zod validation, and deterministic fallback.
+- Added `POST /api/rooms/[roomCode]/strategy` so the room authority can produce an analytics update and apply at most two validated boss strategy changes per raid.
+- Added the `AI Strategy` sidebar panel with cluster score, dominant damage type/class, healing frequency, boss phase, current strategy, last AI/fallback decision, and adaptation count.
+- Added `frontend/.env.example` with server-side OpenAI strategy environment variables.
+
+Day 5 verification commands:
+- `zsh -lic 'pnpm run test -- raid'` passed.
+- `zsh -lic 'pnpm run test -- analytics'` passed.
+- `zsh -lic 'pnpm run test -- ai'` passed.
+- `zsh -lic 'pnpm run typecheck'` passed.
+- `zsh -lic 'pnpm run lint'` passed.
+- `zsh -lic 'pnpm run test'` passed.
+- Browser smoke on existing `http://localhost:3000` passed: creating a room showed the Day 5 `AI Strategy` panel, analytics fields updated, and missing `OPENAI_API_KEY` produced a visible fallback decision instead of breaking the room.
+- Each command emitted the existing zsh startup warnings `not interactive and can't open terminal`, `compinit: initialization aborted`, and `/Users/rahulrajsarma/.bun/_bun:966: command not found: compdef`; the commands still exited successfully.
+
 ## Immediate Next Step
 
-Continue with `GAME-005` contribution scoring and terminal-state polish, then start Day 5 `AI-001` through `AI-003` so the room can show analytics-driven strategy changes. Keep `NET-003`, `SOL-002`, and `SOL-003` queued after the terminal raid summary is stable. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Continue with `NET-003` MagicBlock-routed room authority, then `SOL-002` and `SOL-003` final settlement. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.

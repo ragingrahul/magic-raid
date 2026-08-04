@@ -27,8 +27,8 @@ export default function Home() {
               </h1>
             </div>
             <div className="rounded-md border border-border px-3 py-2 text-sm">
-              <span className="font-mono tabular-nums">DAY-04</span>
-              <span className="ml-2 text-muted-foreground">sync</span>
+              <span className="font-mono tabular-nums">DAY-05</span>
+              <span className="ml-2 text-muted-foreground">ai</span>
             </div>
           </div>
 
@@ -79,7 +79,7 @@ export default function Home() {
           <div className="rounded-md border border-border bg-card p-4 text-card-foreground md:p-6">
             <h2 className="text-xl font-semibold">Next Work</h2>
             <div className="mt-4 grid gap-3">
-              {["AI-001 analytics summary", "AI-002 strategy selector", "SOL-002 settlement instruction"].map(
+              {["NET-003 MagicBlock room authority", "SOL-002 settlement instruction", "SOL-003 settlement client"].map(
                 (item) => (
                   <div
                     key={item}

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  BossStrategyDecisionSchema,
   GAME_LIMITS,
   RaidClientMessageSchema,
   RaidSnapshotMessageSchema
 } from "@/game/schemas";
 import {
+  adaptRoomStrategy,
   applyRoomInput,
   createRoomAuthority,
   joinRoomAuthority,
@@ -107,6 +109,66 @@ describe("NET-001 room snapshots", () => {
     applyRoomInput(room, input, 30_100);
 
     expect(() => applyRoomInput(room, input, 30_200)).toThrow(RoomAuthorityError);
+  });
+});
+
+describe("AI-003 room strategy adaptation", () => {
+  it("applies at most two validated strategy changes per raid", async () => {
+    const room = createRoomAuthority(hostProfile, {
+      roomCode: "AIMODE",
+      nowUnixMs: 100_000
+    });
+    const playerId = room.snapshot.players[0].id;
+    const strategies = ["leap_to_ranged", "magic_resistance", "melee_retaliation"] as const;
+
+    const first = await adaptRoomStrategy(
+      room,
+      { playerId },
+      113_000,
+      async (analytics, options) =>
+        BossStrategyDecisionSchema.parse({
+          raidId: analytics.raidId,
+          strategy: strategies[0],
+          reason: "Ranged damage is dominant.",
+          confidence: 0.9,
+          source: "llm",
+          createdAtMs: options?.createdAtMs ?? analytics.generatedAtMs
+        })
+    );
+    const second = await adaptRoomStrategy(
+      room,
+      { playerId },
+      126_000,
+      async (analytics, options) =>
+        BossStrategyDecisionSchema.parse({
+          raidId: analytics.raidId,
+          strategy: strategies[1],
+          reason: "Magic damage is dominant.",
+          confidence: 0.9,
+          source: "llm",
+          createdAtMs: options?.createdAtMs ?? analytics.generatedAtMs
+        })
+    );
+    const third = await adaptRoomStrategy(
+      room,
+      { playerId },
+      139_000,
+      async (analytics, options) =>
+        BossStrategyDecisionSchema.parse({
+          raidId: analytics.raidId,
+          strategy: strategies[2],
+          reason: "Melee damage is dominant.",
+          confidence: 0.9,
+          source: "llm",
+          createdAtMs: options?.createdAtMs ?? analytics.generatedAtMs
+        })
+    );
+
+    expect(first.snapshot.boss.strategy).toBe("leap_to_ranged");
+    expect(second.snapshot.boss.strategy).toBe("magic_resistance");
+    expect(third.snapshot.boss.strategy).toBe("magic_resistance");
+    expect(third.adaptationCount).toBe(GAME_LIMITS.ai.maxStrategyAdaptations);
+    expect(third.lastDecision?.strategy).toBe("melee_retaliation");
   });
 });
 
