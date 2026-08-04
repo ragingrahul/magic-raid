@@ -210,7 +210,7 @@ Rust dependencies:
 Local development tool:
 - `@magicblock-labs/ephemeral-validator@0.13.19`
 
-Final Anchor dependency compatibility should be verified during `SOL-001`, because the local CLI is `anchor-cli 0.31.1` while the current MagicBlock docs mention Anchor `1.0.2` and `ephemeral-rollups-sdk@0.16.2` supports both modern and compatibility Anchor feature paths.
+Final Anchor dependency compatibility was verified during `SOL-001` for the current scaffold. The local CLI is `anchor-cli 0.31.1`; the workspace uses `anchor-lang@0.31.1`, Solana CLI `2.1.21`, and a committed SBF-compatible `Cargo.lock`. Recheck compatibility before adding `ephemeral-rollups-sdk@0.16.2` to the Rust program because the MagicBlock docs mention newer Anchor paths too.
 
 ## MB-001 Result
 
@@ -218,6 +218,7 @@ Status: complete for planning and API/package verification.
 
 Implementation note:
 - Use `zsh -lic '...'` for Node, package manager, Rust, Cargo, Solana, and Anchor commands in this Codex environment.
+- Use `CARGO_HOME="$PWD/.cargo-home"` for Rust and Anchor verification from the repository root.
 
 Next task:
-- `SOL-001` for Anchor scaffold.
+- `GAME-001` for shared game schemas and `MB-002` for the MagicBlock authoritative state spike.

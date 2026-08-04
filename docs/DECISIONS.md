@@ -156,6 +156,16 @@ Decision: use Solana devnet for final hackathon settlement unless hackathon rule
 
 Rationale: devnet reduces operational risk during a one-week build.
 
+## D-021: Pin SBF-Compatible Anchor Dependency Graph
+
+Status: accepted and verified in `SOL-001`.
+
+Decision: commit `Cargo.lock` and preserve narrow compatibility pins for the Anchor settlement scaffold while the local Solana CLI is `2.1.21` and `cargo build-sbf` uses Rust/Cargo `1.79`. The direct pins are `blake3 = "=1.5.5"`, `proc-macro-crate = "=3.3.0"`, `indexmap = "=2.11.4"`, `unicode-segmentation = "=1.12.0"`, and `zeroize = "=1.8.2"`.
+
+Rationale: fresh dependency resolution pulled transitive crates requiring Rust 1.85 or edition 2024, which blocked `anchor test` under the Solana SBF toolchain. The pinned graph lets `anchor test` and `cargo test` pass without adding a direct `solana-program` dependency that Anchor warns against.
+
+Verification note: run Rust and Anchor checks from the repository root with `CARGO_HOME="$PWD/.cargo-home"`.
+
 ## D-011: Initial Repository Structure
 
 Status: accepted.

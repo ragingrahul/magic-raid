@@ -1,0 +1,8 @@
+target/
+test-ledger/
+.anchor/
+.cargo-home/
+.DS_Store
+.env
+.env.*
+!.env.example

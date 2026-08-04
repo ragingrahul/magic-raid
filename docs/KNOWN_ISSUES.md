@@ -22,31 +22,33 @@ Escalate if:
 ## KI-002: No Application Scaffold Exists
 
 Severity: high.
-Status: open.
+Status: resolved by `APP-001` and verified by `QA-001`.
 
-Issue: `frontend/`, `backend/`, and `programs/` are empty. There are no build, typecheck, lint, or test commands.
+Issue: `frontend/`, `backend/`, and `programs/` were empty. There were no build, typecheck, lint, or test commands.
 
 Mitigation:
-- Complete `APP-001` after `MB-001`.
-- Keep dependencies minimal and document versions.
+- `APP-001` created the frontend scaffold and package scripts.
+- `QA-001` confirmed `npm run typecheck`, `npm run lint`, and `npm run test` pass from `frontend/`.
+- Backend and Solana program scaffolds are tracked separately by `SOL-001` and later tasks.
 
 Escalate if:
-- Dependency installation fails.
+- Baseline frontend verification starts failing again.
 - The scaffold requires moving away from the agreed stack.
 
 ## KI-003: No Anchor Workspace Exists
 
 Severity: high.
-Status: open.
+Status: resolved by `SOL-001`.
 
-Issue: there is no `Anchor.toml`, `Cargo.toml`, or settlement program.
+Issue: there was no `Anchor.toml`, `Cargo.toml`, or settlement program.
 
 Mitigation:
-- Complete `SOL-001` after MagicBlock verification.
-- Keep settlement account structures small.
+- `SOL-001` created `Anchor.toml`, root `Cargo.toml`, and `programs/raid_settlement`.
+- The scaffold keeps settlement account structures small and bounded.
+- `anchor test` and `cargo test` pass with the documented local Cargo cache convention.
 
 Escalate if:
-- Anchor cannot compile locally.
+- Anchor stops compiling locally.
 - Network requirements conflict with hackathon demo needs.
 
 ## KI-004: One-Week Solo Scope Is Tight
@@ -146,10 +148,11 @@ Escalate if:
 Severity: low.
 Status: resolved with command convention.
 
-Issue: plain non-interactive Codex PATH only exposes Codex's bundled `node`, but the project folder's interactive login shell exposes the installed package manager and Solana/Rust/Anchor toolchain.
+Issue: plain non-interactive Codex PATH only exposes Codex's bundled `node`, but the project folder's interactive login shell exposes the installed package manager and Solana/Rust/Anchor toolchain. `zsh -lic` may emit local shell initialization warnings before command output, but the QA-001 and SOL-001 commands exited 0.
 
 Mitigation:
 - Run toolchain commands with `zsh -lic '...'`.
+- For Rust and Anchor commands, use `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 - Use the versions recorded in `docs/MAGICBLOCK_VERIFICATION.md`.
 
 Escalate if:
@@ -168,3 +171,32 @@ Mitigation:
 
 Escalate if:
 - Magic Router or Solana websocket subscriptions fail in the browser or tests.
+
+## KI-012: Global Cargo Registry Cache Has Root-Owned Entries
+
+Severity: low.
+Status: open local environment issue, mitigated.
+
+Issue: unprefixed `anchor test` failed because `~/.cargo/registry/cache/index.crates.io-6f17d22bba15001f` is owned by `root`, causing permission errors while reading cached crates.
+
+Mitigation:
+- Use `CARGO_HOME="$PWD/.cargo-home"` for Rust and Anchor verification from the repository root.
+- Keep `.cargo-home/` ignored.
+
+Escalate if:
+- Rust or Anchor verification fails even with the local Cargo cache prefix.
+
+## KI-013: Solana SBF Cargo Cannot Build Latest Transitive Crates
+
+Severity: medium.
+Status: resolved with lockfile and compatibility pins.
+
+Issue: `cargo build-sbf` uses the Solana 2.1.21 bundled Cargo/Rust 1.79 toolchain. Fresh dependency resolution pulled transitive crates that require Rust 1.85 or edition 2024, including `block-buffer`, `zeroize`, `toml_datetime`, and `indexmap`.
+
+Mitigation:
+- Commit `Cargo.lock`.
+- Preserve the narrow compatibility pins in `programs/raid_settlement/Cargo.toml`: `blake3 = "=1.5.5"`, `proc-macro-crate = "=3.3.0"`, `indexmap = "=2.11.4"`, `unicode-segmentation = "=1.12.0"`, and `zeroize = "=1.8.2"`.
+- Avoid broad `cargo update` unless the resulting graph is verified with `anchor test`.
+
+Escalate if:
+- Future dependency updates require upgrading Solana CLI, Anchor CLI, or the SBF toolchain.

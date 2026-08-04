@@ -13,13 +13,14 @@ Adaptive AI Raid Boss uses a deliberately small architecture: browser rendering,
 
 ## Current Repository State
 
-As of 2026-08-03:
-- `frontend/`, `backend/`, and `programs/` are empty placeholders.
-- There is no initialized Next.js app.
-- There is no Anchor workspace.
-- There are no package manifests or test scripts yet.
+As of 2026-08-04:
+- `frontend/` contains the initialized Next.js app scaffold.
+- `programs/raid_settlement/` contains the initialized Anchor settlement skeleton.
+- Root `Anchor.toml`, root `Cargo.toml`, and `Cargo.lock` exist.
+- `backend/` is still an empty placeholder.
+- MagicBlock-authoritative raid state, game rules, AI, networking, and final settlement logic are not implemented yet.
 
-This document describes the target MVP architecture. `MB-001` must verify MagicBlock and Magic Router APIs before coding against them.
+This document describes the target MVP architecture. `MB-001` verified the initial MagicBlock and Magic Router path; later implementation must continue to verify installed package APIs before coding against them.
 
 ## System Components
 

@@ -4,26 +4,21 @@ This file tracks actual implementation progress and verification results. Keep i
 
 ## Current Repository Snapshot
 
-Date: 2026-08-03.
+Date: 2026-08-04.
 
 Repository contents:
 - `docs/`: planning documents.
 - `prompts/`: specialist agent prompts.
-- `frontend/`: empty placeholder directory.
-- `backend/`: empty placeholder directory.
-- `programs/`: empty placeholder directory.
+- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 probe, Zod schemas, Vitest, and ESLint.
+- `Anchor.toml` and `Cargo.toml`: Anchor/Rust workspace scaffold.
+- `programs/raid_settlement/`: Anchor settlement program skeleton.
 
 Missing:
-- No `package.json`.
-- No `tsconfig.json`.
-- No `next.config.*`.
-- No `Anchor.toml`.
-- No `Cargo.toml`.
-- No frontend source files.
 - No backend source files.
-- No Solana program source files.
+- No final settlement instruction beyond the `SOL-001` skeleton.
+- No MagicBlock-authoritative raid state implementation yet.
 
-Assessment: the project is in bootstrap planning state. No application code has been implemented.
+Assessment: frontend and Anchor scaffolds exist. Baseline frontend and Solana scaffold verification commands pass. Backend, MagicBlock state, game rules, multiplayer, AI, and final settlement logic have not started.
 
 ## Task Status
 
@@ -33,8 +28,9 @@ Assessment: the project is in bootstrap planning state. No application code has 
 | `PLAN-002` | Complete | Specialist prompt files drafted. |
 | `MB-001` | Complete for planning | Official docs, endpoints, package names, package versions, and local toolchain availability recorded in `docs/MAGICBLOCK_VERIFICATION.md`. |
 | `APP-001` | Complete | Next.js frontend scaffold created under `frontend/`; typecheck, lint, test, and build pass. |
-| `SOL-001` | Not started | Unblocked; run Rust/Solana/Anchor commands through `zsh -lic`. |
-| Game, AI, networking, settlement, QA, demo tasks | Not started | Await scaffold and API verification. |
+| `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
+| `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
+| Game, AI, networking, settlement, remaining QA, demo tasks | Not started | Await shared game schema and MagicBlock state implementation. |
 
 ## Repository Assessment Commands Run
 
@@ -52,15 +48,7 @@ Result: no app or program manifests were found.
 
 ## Verification Log
 
-No code verification commands exist yet because the project has not been scaffolded.
-
-Expected commands after scaffold:
-- `npm run typecheck`
-- `npm run lint`
-- `npm run test`
-- `npm run dev`
-- `anchor test`
-- `cargo test`
+Baseline frontend verification commands now exist under `frontend/`.
 
 Bootstrap consistency review:
 - Roadmap milestones have task IDs.
@@ -87,9 +75,28 @@ Bootstrap consistency review:
 - Added Vitest smoke tests for schemas and MagicBlock constants.
 - Production build required escalation because Turbopack tried to bind a local port inside the sandbox; the escalated build passed.
 
+`QA-001` verification, run on 2026-08-04 from `frontend/`:
+- `zsh -lic 'npm run typecheck'`: passed.
+- `zsh -lic 'npm run lint'`: passed.
+- `zsh -lic 'npm run test'`: passed; 1 test file and 3 tests passed.
+- The `zsh -lic` shell startup emitted non-blocking local shell initialization warnings (`compinit` and Bun completion), but all commands exited 0.
+- No failing baseline commands were recorded in `docs/KNOWN_ISSUES.md`.
+
+`SOL-001` verification, run on 2026-08-04 from the repository root:
+- Created the Anchor workspace manifest, Rust workspace manifest, and `programs/raid_settlement` crate.
+- Added a no-op `initialize` instruction, bounded settlement record types, contribution score bounds, and checked contribution score aggregation.
+- Added Rust unit tests for checked score aggregation, overflow rejection, and score component bounds.
+- Generated local program ID `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
+- Pinned the Cargo lockfile and narrow direct compatibility dependencies so Solana SBF Cargo 1.79 can build the Anchor 0.31.1 scaffold.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'`: passed; SBF build completed and 4 Rust tests passed.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo test'`: passed; 4 Rust tests and 0 doctests passed.
+- `zsh -lic 'cargo fmt --all --check'`: passed.
+- Direct unprefixed `anchor test` failed in this local environment because the global Cargo registry cache contains root-owned entries; use the local `CARGO_HOME="$PWD/.cargo-home"` convention recorded in `docs/KNOWN_ISSUES.md`.
+- Anchor/Rust macro expansion emits non-blocking `unexpected cfg` warnings under the host Rust toolchain; verification commands still exit 0.
+
 ## Immediate Next Step
 
-Start `SOL-001`. In this Codex environment, run toolchain commands through `zsh -lic`.
+Start `GAME-001` to expand shared game schemas and constants, then continue the MagicBlock proof path with `MB-002`. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.
@@ -148,6 +155,7 @@ Frontend smoke result:
 Local toolchain:
 - Plain non-interactive Codex PATH only exposes Codex's bundled `node`.
 - The project folder's interactive login shell exposes the installed toolchain through `zsh -lic`.
+- Rust and Anchor verification should use project-local Cargo cache prefix `CARGO_HOME="$PWD/.cargo-home"` because the global Cargo registry cache has root-owned entries.
 - `node`: `v22.14.0`.
 - `npm`: `10.9.2`.
 - `npx`: `10.9.2`.

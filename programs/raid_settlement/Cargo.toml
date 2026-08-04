@@ -1,0 +1,28 @@
+[package]
+name = "raid_settlement"
+version = "0.1.0"
+description = "Adaptive AI Raid Boss settlement program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "raid_settlement"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+
+# Compatibility pins for Solana CLI 2.1.21 / cargo-build-sbf Rust 1.79.
+# See docs/DECISIONS.md D-021 before changing these.
+blake3 = "=1.5.5"
+indexmap = "=2.11.4"
+proc-macro-crate = "=3.3.0"
+unicode-segmentation = "=1.12.0"
+zeroize = "=1.8.2"

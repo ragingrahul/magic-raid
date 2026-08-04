@@ -6,16 +6,16 @@ Adaptive AI Raid Boss is a browser-based, real-time, cooperative raid game for a
 
 ## Repository Assessment
 
-Assessment date: 2026-08-03.
+Assessment date: 2026-08-04.
 
 Current repository state:
 - `docs/` exists and contains planning documents.
 - `prompts/` exists and contains specialist agent prompt files.
-- `frontend/`, `backend/`, and `programs/` directories exist but contain no source files.
-- No `package.json`, `tsconfig.json`, `next.config.*`, `Anchor.toml`, or `Cargo.toml` exists yet.
-- No Next.js, Phaser, backend, Anchor, or Solana code has been initialized.
+- `frontend/` contains the Next.js, TypeScript, Tailwind CSS, Phaser 3 probe, Zod, Vitest, and ESLint scaffold.
+- `Anchor.toml`, root `Cargo.toml`, and `programs/raid_settlement/` contain the Anchor settlement skeleton.
+- `backend/` is still an empty placeholder.
 
-Implication: the next coding task is scaffolding the smallest reliable workspace. MagicBlock API details must be verified from official documentation before implementation.
+Implication: the next coding tasks are expanding shared game schemas and proving one MagicBlock-authoritative state transition. MagicBlock API details must continue to be verified from official documentation before implementation.
 
 ## Core Concept
 
@@ -144,10 +144,10 @@ The hackathon demo is successful when:
 
 ## Immediate Next Task
 
-`MB-001` is complete for planning; see `docs/MAGICBLOCK_VERIFICATION.md`.
+`MB-001`, `APP-001`, `QA-001`, and `SOL-001` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
 
 Next begin:
-- `SOL-001`: scaffold the Anchor settlement workspace.
-- `GAME-001`: expand the shared game schemas after the Anchor skeleton is in place.
+- `GAME-001`: expand shared game schemas and constants.
+- `MB-002`: build the minimal authoritative raid state spike.
 
-Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`.
+Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`. Run Rust and Anchor verification with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
