@@ -218,6 +218,23 @@ Verification commands:
 - `npm run test -- network`
 - Manual reconnect test documented in `docs/PROGRESS.md`.
 
+### NET-003: Route room gameplay authority through MagicBlock
+
+Priority: required before claiming live MagicBlock room authority.
+Dependencies: `NET-001`, `MB-004`, `GAME-005`.
+
+Acceptance criteria:
+- State-changing room inputs route through the verified Magic Router/MagicBlock authority path instead of only the in-memory Next room authority.
+- The room service reconciles MagicBlock `RaidState` readbacks into the snapshots clients render.
+- Movement and visual interpolation remain low-latency, but combat-critical mutations, raid terminal state, contribution damage, and final raid summary come from the MagicBlock-authoritative state.
+- If full movement authority is deferred, the accepted split between visual movement intents and MagicBlock-critical gameplay mutations is documented before demo rehearsal.
+- The UI clearly distinguishes live MagicBlock authority from local fallback mode.
+
+Verification commands:
+- `npm run typecheck`
+- `npm run test -- network`
+- MagicBlock-routed multiplayer smoke command documented in `docs/PROGRESS.md`.
+
 ## Web Experience
 
 ### WEB-001: Create room code flow

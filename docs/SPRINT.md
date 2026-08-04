@@ -81,6 +81,9 @@ Done when:
 - Clients receive consistent authoritative snapshots.
 - Wallet connection is visible.
 
+Carry-forward:
+- `NET-003` remains scheduled for Day 6 authority hardening so gameplay-critical mutations reconcile with MagicBlock state.
+
 ## Day 5 Backlog: AI Adaptation
 
 Goals:
@@ -100,10 +103,12 @@ Done when:
 ## Day 6 Backlog: Settlement And QA
 
 Goals:
+- Route gameplay-critical room authority through MagicBlock.
 - Commit final raid result to Solana.
 - Cover critical failure cases.
 
 Tasks:
+- `NET-003`
 - `SOL-002`
 - `SOL-003`
 - `QA-002`
@@ -111,6 +116,7 @@ Tasks:
 - `QA-004` if time allows.
 
 Done when:
+- Combat-critical room mutations and final raid summary reconcile with MagicBlock-authoritative state or the exact blocker is recorded.
 - Settlement instruction records bounded final result data.
 - Frontend can submit and display settlement status.
 - Unit and Anchor tests cover critical constraints.

@@ -14,7 +14,7 @@ MagicBlock proof -> local game -> multiplayer -> boss engine -> AI -> settlement
 | M3: Local playable raid | Day 3 | `GAME-001`, `GAME-002`, `GAME-003`, `GAME-004`, `GAME-005` | One browser can fight a deterministic boss |
 | M4: Multiplayer sync | Day 4 | `NET-001`, `NET-002`, `WEB-001`, `WEB-002` | 2-4 players see the same boss |
 | M5: Adaptive boss | Day 5 | `AI-001`, `AI-002`, `AI-003`, `WEB-003` | Analytics panel triggers visible strategy changes |
-| M6: Settlement and test pass | Day 6 | `SOL-002`, `SOL-003`, `QA-002`, `QA-003` | Final result commits to Solana and core tests pass |
+| M6: Settlement and authority hardening | Day 6 | `NET-003`, `SOL-002`, `SOL-003`, `QA-002`, `QA-003` | Final result commits to Solana and core tests pass |
 | M7: Demo hardening | Day 7 | `DEMO-001`, `DEMO-002`, `POLISH-001` | Repeatable live demo with fallback plan |
 
 ## Day Plan
@@ -66,6 +66,9 @@ Tasks:
 
 If perfect synchronization becomes expensive, prefer stable snapshots and visible authoritative correction.
 
+Carry-forward:
+- `NET-003` is scheduled for Day 6 to replace or augment the Day 4 room authority with MagicBlock-routed gameplay-critical mutations.
+
 ### Day 5: AI Adaptation
 
 Primary outcome: the boss visibly changes behaviour based on team analytics.
@@ -83,6 +86,7 @@ If the LLM API fails, the deterministic fallback must still produce the demo mom
 Primary outcome: final raid result settles to Solana and tests cover critical rules.
 
 Tasks:
+- `NET-003`: route room gameplay authority through MagicBlock.
 - `SOL-002`: implement final settlement instruction.
 - `SOL-003`: connect frontend/backend settlement flow.
 - `QA-002`: add game and AI unit tests.
@@ -108,6 +112,7 @@ Required before submission:
 - `APP-001`
 - `GAME-001` through `GAME-005`
 - `NET-001`
+- `NET-003`
 - `AI-001` through `AI-003`
 - `SOL-001` through `SOL-003`
 - `WEB-001` through `WEB-003`

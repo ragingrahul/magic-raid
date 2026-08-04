@@ -114,6 +114,8 @@ export const SolanaAddressSchema = z
   .trim()
   .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 
+export const RoomDisplayNameSchema = z.string().trim().min(1).max(32);
+
 export const PositionSchema = z
   .object({
     x: z.number().finite().min(0).max(GAME_LIMITS.arena.width),
@@ -293,6 +295,37 @@ export const RaidServerMessageSchema = z.discriminatedUnion("type", [
   RaidErrorMessageSchema
 ]);
 
+export const RoomProfileSchema = z
+  .object({
+    displayName: RoomDisplayNameSchema,
+    playerClass: PlayerClassSchema,
+    wallet: SolanaAddressSchema.optional()
+  })
+  .strict();
+
+export const CreateRoomRequestSchema = RoomProfileSchema;
+
+export const JoinRoomRequestSchema = RoomProfileSchema.extend({
+  roomCode: RoomCodeSchema
+}).strict();
+
+export const RoomProfileUpdateRequestSchema = z
+  .object({
+    playerId: EntityIdSchema,
+    displayName: RoomDisplayNameSchema.optional(),
+    playerClass: PlayerClassSchema.optional(),
+    wallet: SolanaAddressSchema.nullable().optional()
+  })
+  .strict();
+
+export const RoomSessionSchema = z
+  .object({
+    roomCode: RoomCodeSchema,
+    playerId: EntityIdSchema,
+    snapshot: RaidSnapshotSchema
+  })
+  .strict();
+
 export const DamageByClassSchema = z
   .object({
     warrior: z.number().int().min(0),
@@ -414,6 +447,11 @@ export type RaidClientMessage = z.infer<typeof RaidClientMessageSchema>;
 export type AttackEvent = z.infer<typeof AttackEventSchema>;
 export type RaidSnapshot = z.infer<typeof RaidSnapshotSchema>;
 export type RaidServerMessage = z.infer<typeof RaidServerMessageSchema>;
+export type RoomProfile = z.infer<typeof RoomProfileSchema>;
+export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
+export type JoinRoomRequest = z.infer<typeof JoinRoomRequestSchema>;
+export type RoomProfileUpdateRequest = z.infer<typeof RoomProfileUpdateRequestSchema>;
+export type RoomSession = z.infer<typeof RoomSessionSchema>;
 export type RaidAnalyticsSummary = z.infer<typeof RaidAnalyticsSummarySchema>;
 export type BossStrategyDecision = z.infer<typeof BossStrategyDecisionSchema>;
 export type SettlementContribution = z.infer<typeof SettlementContributionSchema>;

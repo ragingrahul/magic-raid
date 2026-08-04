@@ -9,16 +9,16 @@ Date: 2026-08-04.
 Repository contents:
 - `docs/`: planning documents.
 - `prompts/`: specialist agent prompts.
-- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 local raid arena, Zod schemas, Vitest, and ESLint.
+- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 snapshot-driven raid arena, Day 4 room API routes, wallet UI, Zod schemas, Vitest, and ESLint.
 - `Anchor.toml` and `Cargo.toml`: Anchor/Rust workspace scaffold.
 - `programs/raid_settlement/`: Anchor settlement program skeleton.
 
 Missing:
-- No backend source files.
 - No final raid-result settlement instruction beyond the `SOL-001` skeleton.
-- No multiplayer sync, AI strategy submitter, wallet UI, or final settlement UI yet.
+- No AI strategy submitter, analytics panel, or final settlement UI yet.
+- No production room backend beyond the in-memory Next route authority used for the Day 4 demo.
 
-Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, and `GAME-002` through `GAME-004` local gameplay pass. Multiplayer, AI, wallet integration, and final settlement UI remain ahead.
+Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-004` local gameplay, and Day 4 room sync/wallet UI pass. AI, final settlement, and production room hosting remain ahead.
 
 ## Task Status
 
@@ -35,9 +35,14 @@ Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaff
 | `GAME-002` | Complete | Phaser renders a snapshot-driven local arena with player movement, boss/player sprites, HP bars, attack indicators, and React action controls. |
 | `GAME-003` | Complete | Warrior, Ranger, and Mage normal/special attacks use deterministic damage, range, cooldown, damage type, and bounds. |
 | `GAME-004` | Complete | Boss phases, Cleave, Ground Slam, Leap, Arcane Shield, Marked Strike, strategy-influenced attack preference, and cooldown rules are implemented and verified. |
+| `NET-001` | Complete | Clients submit validated inputs to the Next room authority and poll shared authoritative snapshots rendered with Phaser interpolation. |
+| `NET-002` | Complete | Saved room/player IDs recover latest snapshots on reload; invalid room codes and rejected inputs surface recoverable UI errors. |
+| `WEB-001` | Complete | Users can create a room code and another client can join it through the room form. |
+| `WEB-002` | Complete | Wallet UI supports injected Solana wallet connect when available, demo wallet fallback, address display, copy, explorer, and disconnect. |
 | `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
 | `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
-| Remaining game, AI, networking, settlement, QA, demo tasks | Not started | Await contribution scoring terminal polish, room sync, AI strategy, wallet UI, and final settlement flow. |
+| `NET-003` | Not started | Explicit follow-up for routing gameplay-critical room authority through MagicBlock instead of only the in-memory Next room authority. |
+| Remaining game, AI, settlement, QA, demo tasks | Not started | Await contribution scoring terminal polish, AI strategy, MagicBlock-routed room authority, final settlement flow, and demo hardening. |
 
 ## Repository Assessment Commands Run
 
@@ -164,6 +169,26 @@ Bootstrap consistency review:
 - The in-app Browser control tool was not exposed by tool discovery in this session, so the manual check used the transient Playwright CLI instead.
 - The `zsh -lic` shell startup emitted the known non-blocking local shell initialization warnings (`compinit` and Bun completion), but all verification commands exited 0.
 
+`DAY-04` multiplayer room verification, run on 2026-08-05 from `frontend/`:
+- Added room/network schemas for room profiles, create/join requests, profile updates, and room sessions.
+- Added `frontend/src/game/room-authority.ts` as a deterministic in-memory room authority: it creates room codes, enforces the 4-player demo cap, validates all client inputs with Zod, rejects stale input sequences, advances boss snapshots server-side, and recovers the latest snapshot by room code plus player id.
+- Added Next route handlers under `frontend/src/app/api/rooms/` for create, join, snapshot recovery, input submission, and profile/wallet update.
+- Refactored `frontend/src/components/phaser-arena.tsx` so Phaser renders authoritative snapshots from React, interpolates entity positions toward new snapshots, and emits movement/attack intents instead of owning private game state.
+- Added `frontend/src/components/raid-room.tsx` with create/join room flow, invalid-code errors, saved-session recovery, roster, sync status, action controls, injected-wallet connect, demo wallet fallback, address copy, devnet explorer link, and disconnect.
+- Updated `frontend/src/app/page.tsx` into the Day 4 multiplayer room surface while keeping verified MagicBlock devnet details visible.
+- Added `frontend/src/game/__tests__/network.test.ts`.
+- `zsh -lic 'npm run typecheck'`: passed.
+- `zsh -lic 'npm run lint'`: passed.
+- `zsh -lic 'npm run test -- network'`: passed; 1 test file and 5 tests passed.
+- `zsh -lic 'npm run test'`: passed; 4 test files and 28 tests passed.
+- `zsh -lic 'npm run build'`: passed; production build included `/api/rooms`, `/api/rooms/[roomCode]`, `/api/rooms/[roomCode]/input`, `/api/rooms/[roomCode]/join`, and `/api/rooms/[roomCode]/profile`.
+- API smoke against `http://localhost:3000`: create room returned `200`, join returned `200` with 2 players, invalid join returned `404 room_not_found`, and recovery returned the latest snapshot.
+- Browser control plugin was not exposed by tool discovery in this session, so visual verification used bundled Playwright after installing its Chromium cache outside the repo.
+- Desktop browser smoke: host created room `GJ7SD8`, guest joined by code, host movement plus Strike dropped boss HP to `1176`, and guest observed the same HP/roster. Screenshots: `/tmp/magicraid-day04-host.png` and `/tmp/magicraid-day04-guest.png`.
+- After input submission serialization, repeated the two-page smoke with room `SSSYU9`; no stale-input error was visible while the guest observed the shared HP drop.
+- Mobile browser smoke at `375x900`: create room plus canvas render passed with no horizontal overflow. Screenshot: `/tmp/magicraid-day04-mobile.png`.
+- Current limitation: Day 4 room sync uses an in-memory Next route authority for local demo clients. The MagicBlock `RaidState` lifecycle remains verified by `MB-004`, but routing every gameplay input through MagicBlock is not yet implemented in the room UI.
+
 ## MagicBlock runbook
 
 Current public devnet configuration:
@@ -224,7 +249,7 @@ Latest live lifecycle result:
 
 ## Immediate Next Step
 
-Continue with `GAME-005` to finish contribution scoring and terminal-state polish, then start `NET-001` to consume the completed `MB-002` `RaidState` PDA path from the local arena contract. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Continue with `GAME-005` contribution scoring and terminal-state polish, then start Day 5 `AI-001` through `AI-003` so the room can show analytics-driven strategy changes. Keep `NET-003`, `SOL-002`, and `SOL-003` queued after the terminal raid summary is stable. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.

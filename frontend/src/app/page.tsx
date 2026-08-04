@@ -1,12 +1,12 @@
-import { PhaserArena } from "@/components/phaser-arena";
+import { RaidRoom } from "@/components/raid-room";
 import {
   deriveRaidStatePda,
   MAGICBLOCK_DEVNET
 } from "@/lib/magicblock";
 
 const pillars = [
-  { label: "Authority", value: "MagicBlock ER", detail: "Asia devnet" },
-  { label: "Strategy", value: "AI enum only", detail: "Zod validated" },
+  { label: "Room Sync", value: "Snapshot API", detail: "Day 4" },
+  { label: "Authority", value: "MagicBlock ER", detail: "Verified path" },
   { label: "Settlement", value: "Solana devnet", detail: "Final result" }
 ];
 
@@ -15,20 +15,20 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 lg:px-8">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-7xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="flex min-h-130 flex-col rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6">
+      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-7xl gap-6">
+        <section className="rounded-md border border-border bg-card p-4 text-card-foreground md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">
                 MagicBlock Blitz
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-normal md:text-4xl">
-                Adaptive AI Raid Boss
+                Multiplayer Raid Room
               </h1>
             </div>
             <div className="rounded-md border border-border px-3 py-2 text-sm">
-              <span className="font-mono tabular-nums">MB-002</span>
-              <span className="ml-2 text-muted-foreground">spike</span>
+              <span className="font-mono tabular-nums">DAY-04</span>
+              <span className="ml-2 text-muted-foreground">sync</span>
             </div>
           </div>
 
@@ -44,17 +44,15 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="mt-6 flex-1">
-            <div className="min-h-80 rounded-lg border border-border bg-muted/40 p-3">
-              <PhaserArena />
-            </div>
+          <div className="mt-6">
+            <RaidRoom />
           </div>
         </section>
 
-        <section className="grid gap-6">
-          <div className="rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6">
-            <h2 className="text-xl font-semibold">Verified MagicBlock Path</h2>
-            <dl className="mt-4 grid gap-3 text-sm">
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-md border border-border bg-card p-4 text-card-foreground md:p-6">
+            <h2 className="text-xl font-semibold">Verified Path</h2>
+            <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
               <div>
                 <dt className="text-muted-foreground">Router RPC</dt>
                 <dd className="mt-1 break-all font-mono">{MAGICBLOCK_DEVNET.routerRpc}</dd>
@@ -78,10 +76,10 @@ export default function Home() {
             </dl>
           </div>
 
-          <div className="rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6">
+          <div className="rounded-md border border-border bg-card p-4 text-card-foreground md:p-6">
             <h2 className="text-xl font-semibold">Next Work</h2>
-            <div className="mt-4 space-y-3">
-              {["NET-001 room sync", "AI-001 analytics summary", "SOL-002 settlement instruction"].map(
+            <div className="mt-4 grid gap-3">
+              {["AI-001 analytics summary", "AI-002 strategy selector", "SOL-002 settlement instruction"].map(
                 (item) => (
                   <div
                     key={item}

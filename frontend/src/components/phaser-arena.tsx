@@ -2,55 +2,71 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  BOSS_STRATEGIES,
   GAME_LIMITS,
-  PLAYER_CLASSES,
-  type BossStrategy,
+  RaidSnapshotSchema,
   type PlayerAttackKind,
-  type PlayerClass,
+  type Position,
   type RaidSnapshot
 } from "@/game/schemas";
-import {
-  advanceBoss,
-  applyPlayerAttack,
-  createLocalRaidSnapshot,
-  movePlayer
-} from "@/game/rules";
+import { createLocalRaidSnapshot } from "@/game/rules";
 
 type ArenaStatus = "loading" | "ready" | "error";
 
-type ArenaHud = {
-  status: RaidSnapshot["status"];
-  bossHp: number;
-  bossMaxHp: number;
-  playerHp: number;
-  playerMaxHp: number;
-  phase: RaidSnapshot["boss"]["phase"];
-  strategy: BossStrategy;
-  damage: number;
+type PhaserArenaProps = {
+  snapshot: RaidSnapshot | null;
+  localPlayerId: string | null;
+  interactive?: boolean;
+  onMove?: (direction: Position) => void;
+  onAttack?: (kind: PlayerAttackKind) => void;
 };
 
-const PLAYER_ID = "player-1";
-const ATTACK_EVENT = "magicraid:attack";
+const SNAPSHOT_EVENT = "magicraid:snapshot";
+const SEND_MOVE_EVERY_MS = 90;
+const INTERPOLATION_ALPHA = 0.22;
 
-const initialHud: ArenaHud = {
-  status: "active",
-  bossHp: GAME_LIMITS.boss.maxHp,
-  bossMaxHp: GAME_LIMITS.boss.maxHp,
-  playerHp: GAME_LIMITS.player.maxHp,
-  playerMaxHp: GAME_LIMITS.player.maxHp,
-  phase: "phase_1",
-  strategy: "area_denial",
-  damage: 0
-};
-
-export function PhaserArena() {
+export function PhaserArena({
+  snapshot,
+  localPlayerId,
+  interactive = true,
+  onMove,
+  onAttack
+}: PhaserArenaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onMoveRef = useRef(onMove);
+  const onAttackRef = useRef(onAttack);
+  const initialSnapshotRef = useRef(snapshot);
+  const localPlayerIdRef = useRef(localPlayerId);
+  const interactiveRef = useRef(interactive);
   const [status, setStatus] = useState<ArenaStatus>("loading");
-  const [selectedClass, setSelectedClass] = useState<PlayerClass>("warrior");
-  const [selectedStrategy, setSelectedStrategy] = useState<BossStrategy>("area_denial");
   const [retryNonce, setRetryNonce] = useState(0);
-  const [hud, setHud] = useState<ArenaHud>(initialHud);
+
+  useEffect(() => {
+    onMoveRef.current = onMove;
+  }, [onMove]);
+
+  useEffect(() => {
+    onAttackRef.current = onAttack;
+  }, [onAttack]);
+
+  useEffect(() => {
+    localPlayerIdRef.current = localPlayerId;
+  }, [localPlayerId]);
+
+  useEffect(() => {
+    interactiveRef.current = interactive;
+  }, [interactive]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent(SNAPSHOT_EVENT, {
+        detail: {
+          snapshot,
+          localPlayerId,
+          interactive
+        }
+      })
+    );
+  }, [interactive, localPlayerId, snapshot]);
 
   useEffect(() => {
     let active = true;
@@ -84,9 +100,16 @@ export function PhaserArena() {
             space: Phaser.Input.Keyboard.Key;
             shift: Phaser.Input.Keyboard.Key;
           };
-          private snapshot = createLocalRaidSnapshot(selectedClass, selectedStrategy);
-          private hudLastUpdatedAtMs = 0;
-          private externalAttack?: (event: Event) => void;
+          private renderSnapshot = cloneSnapshot(
+            initialSnapshotRef.current ?? createLocalRaidSnapshot()
+          );
+          private targetSnapshot = cloneSnapshot(
+            initialSnapshotRef.current ?? createLocalRaidSnapshot()
+          );
+          private sceneLocalPlayerId = localPlayerIdRef.current;
+          private sceneInteractive = interactiveRef.current;
+          private lastMoveSentAtMs = 0;
+          private externalSnapshot?: (event: Event) => void;
 
           constructor() {
             super("raid-arena");
@@ -120,50 +143,60 @@ export function PhaserArena() {
             };
 
             this.input.on("pointerdown", () => {
-              this.attack("normal", this.game.loop.now);
+              if (this.sceneInteractive) {
+                onAttackRef.current?.("normal");
+              }
             });
 
-            this.externalAttack = (event: Event) => {
-              const detail = (event as CustomEvent<{ kind: PlayerAttackKind }>).detail;
-              if (detail?.kind) {
-                this.attack(detail.kind, this.game.loop.now);
+            this.externalSnapshot = (event: Event) => {
+              const detail = (
+                event as CustomEvent<{
+                  snapshot: RaidSnapshot | null;
+                  localPlayerId: string | null;
+                  interactive: boolean;
+                }>
+              ).detail;
+
+              this.sceneLocalPlayerId = detail.localPlayerId;
+              this.sceneInteractive = detail.interactive;
+              if (detail.snapshot) {
+                this.targetSnapshot = cloneSnapshot(detail.snapshot);
               }
             };
-            window.addEventListener(ATTACK_EVENT, this.externalAttack);
+            window.addEventListener(SNAPSHOT_EVENT, this.externalSnapshot);
             this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-              if (this.externalAttack) {
-                window.removeEventListener(ATTACK_EVENT, this.externalAttack);
+              if (this.externalSnapshot) {
+                window.removeEventListener(SNAPSHOT_EVENT, this.externalSnapshot);
               }
             });
-
-            this.publishHud(true);
           }
 
-          update(time: number, delta: number) {
+          update(time: number) {
             if (!this.graphics || !this.keys) {
               return;
             }
 
-            if (this.snapshot.status === "active") {
-              this.move(delta);
+            if (this.sceneInteractive && this.targetSnapshot.status === "active") {
+              this.sendMovementIntent(time);
 
               if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
-                this.attack("normal", time);
+                onAttackRef.current?.("normal");
               }
 
               if (Phaser.Input.Keyboard.JustDown(this.keys.shift)) {
-                this.attack("special", time);
+                onAttackRef.current?.("special");
               }
-
-              this.snapshot = advanceBoss(this.snapshot, time).snapshot;
             }
 
-            this.draw(time);
-            this.publishHud(false);
+            this.renderSnapshot = interpolateSnapshot(
+              this.renderSnapshot,
+              this.targetSnapshot
+            );
+            this.draw();
           }
 
-          private move(delta: number) {
-            if (!this.keys) {
+          private sendMovementIntent(time: number) {
+            if (!this.keys || !this.sceneLocalPlayerId || time - this.lastMoveSentAtMs < SEND_MOVE_EVERY_MS) {
               return;
             }
 
@@ -177,56 +210,38 @@ export function PhaserArena() {
             if (this.keys.up.isDown || this.keys.w.isDown) direction.y -= 1;
             if (this.keys.down.isDown || this.keys.s.isDown) direction.y += 1;
 
-            if (direction.x !== 0 || direction.y !== 0) {
-              this.snapshot = movePlayer(this.snapshot, PLAYER_ID, direction, delta);
+            if (direction.x === 0 && direction.y === 0) {
+              return;
             }
+
+            const length = Math.max(1, Math.hypot(direction.x, direction.y));
+            this.lastMoveSentAtMs = time;
+            onMoveRef.current?.({
+              x: direction.x / length,
+              y: direction.y / length
+            });
           }
 
-          private attack(kind: PlayerAttackKind, nowMs: number) {
-            const result = applyPlayerAttack(this.snapshot, PLAYER_ID, kind, nowMs);
-            this.snapshot = result.snapshot;
-            this.publishHud(true);
-          }
-
-          private draw(nowMs: number) {
+          private draw() {
             if (!this.graphics) {
               return;
             }
 
             const graphics = this.graphics;
+            const snapshotToDraw = this.renderSnapshot;
             graphics.clear();
             drawArena(graphics);
 
-            for (const attack of this.snapshot.attacks) {
-              if (attack.expiresAtMs >= nowMs) {
-                drawAttack(graphics, attack);
+            for (const attack of snapshotToDraw.attacks) {
+              if (attack.expiresAtMs >= snapshotToDraw.serverTimeMs) {
+                drawAttack(graphics, attack, snapshotToDraw);
               }
             }
 
-            drawBoss(graphics, this.snapshot, nowMs);
-            for (const player of this.snapshot.players) {
-              drawPlayer(graphics, player);
+            drawBoss(graphics, snapshotToDraw);
+            for (const player of snapshotToDraw.players) {
+              drawPlayer(graphics, player, player.id === this.sceneLocalPlayerId);
             }
-          }
-
-          private publishHud(force: boolean) {
-            const nowMs = this.game.loop.now;
-            if (!force && nowMs - this.hudLastUpdatedAtMs < 120) {
-              return;
-            }
-
-            const player = this.snapshot.players[0];
-            this.hudLastUpdatedAtMs = nowMs;
-            setHud({
-              status: this.snapshot.status,
-              bossHp: this.snapshot.boss.hp,
-              bossMaxHp: this.snapshot.boss.maxHp,
-              playerHp: player.hp,
-              playerMaxHp: player.maxHp,
-              phase: this.snapshot.boss.phase,
-              strategy: this.snapshot.boss.strategy,
-              damage: player.contribution.damage
-            });
           }
         }
 
@@ -257,140 +272,76 @@ export function PhaserArena() {
       active = false;
       game?.destroy(true);
     };
-  }, [selectedClass, selectedStrategy, retryNonce]);
-
-  function sendAttack(kind: PlayerAttackKind) {
-    window.dispatchEvent(
-      new CustomEvent(ATTACK_EVENT, {
-        detail: {
-          kind
-        }
-      })
-    );
-  }
+  }, [retryNonce]);
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" aria-label="Player class">
-          {PLAYER_CLASSES.map((playerClass) => (
+    <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-background">
+      <div ref={containerRef} className="magicraid-arena absolute inset-0" />
+      {status === "loading" ? (
+        <div className="absolute inset-0 grid place-items-center bg-background/90">
+          <div className="h-24 w-56 rounded-md bg-muted" />
+        </div>
+      ) : null}
+      {status === "error" ? (
+        <div className="absolute inset-0 grid place-items-center bg-background/95 p-4 text-center">
+          <div>
+            <p className="text-sm font-medium">Arena failed to load.</p>
             <button
-              key={playerClass}
               type="button"
-              onClick={() => setSelectedClass(playerClass)}
-              className={`min-h-10 rounded-md border px-3 text-sm font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                selectedClass === playerClass
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-card-foreground hover:bg-muted"
-              }`}
+              onClick={() => setRetryNonce((current) => current + 1)}
+              className="mt-3 min-h-10 rounded-md border border-border px-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              {playerClass}
+              Retry
             </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => sendAttack("normal")}
-            disabled={status !== "ready" || hud.status !== "active"}
-            className="min-h-10 rounded-md border border-border bg-card px-3 text-sm font-medium text-card-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
-          >
-            Strike
-          </button>
-          <button
-            type="button"
-            onClick={() => sendAttack("special")}
-            disabled={status !== "ready" || hud.status !== "active"}
-            className="min-h-10 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
-          >
-            Special
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-3">
-        <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-background">
-          <div ref={containerRef} className="magicraid-arena absolute inset-0" />
-          {status === "loading" ? (
-            <div className="absolute inset-0 grid place-items-center bg-background/90">
-              <div className="h-24 w-56 rounded-md bg-muted" />
-            </div>
-          ) : null}
-          {status === "error" ? (
-            <div className="absolute inset-0 grid place-items-center bg-background/95 p-4 text-center">
-              <div>
-                <p className="text-sm font-medium">Arena failed to load.</p>
-                <button
-                  type="button"
-                  onClick={() => setRetryNonce((current) => current + 1)}
-                  className="mt-3 min-h-10 rounded-md border border-border px-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  Retry
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <aside className="rounded-md border border-border bg-card p-3 text-card-foreground">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.4fr]">
-            <HudBar label="Boss" value={hud.bossHp} max={hud.bossMaxHp} />
-            <HudBar label="Raider" value={hud.playerHp} max={hud.playerMaxHp} />
-
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <HudStat label="Phase" value={hud.phase.replace("_", " ")} />
-              <HudStat label="Status" value={hud.status} />
-              <HudStat label="Damage" value={hud.damage.toString()} />
-              <HudStat label="Class" value={selectedClass} />
-            </div>
-
-            <label className="grid gap-1 text-sm font-medium md:col-span-3">
-              <span>Strategy</span>
-              <select
-                value={selectedStrategy}
-                onChange={(event) => setSelectedStrategy(event.target.value as BossStrategy)}
-                className="min-h-10 rounded-md border border-border bg-background px-2 text-sm capitalize focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {BOSS_STRATEGIES.map((strategy) => (
-                  <option key={strategy} value={strategy}>
-                    {strategy.replaceAll("_", " ")}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
-        </aside>
-      </div>
+        </div>
+      ) : null}
+      {!snapshot ? (
+        <div className="absolute inset-0 grid place-items-center bg-background/75 p-4 text-center">
+          <p className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-card-foreground">
+            Create or join a room.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function HudBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const percent = max === 0 ? 0 : Math.round((value / max) * 100);
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="font-mono text-xs text-muted-foreground">
-          {value}/{max}
-        </span>
-      </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-sm bg-muted">
-        <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
-  );
+function cloneSnapshot(snapshot: RaidSnapshot): RaidSnapshot {
+  return RaidSnapshotSchema.parse(JSON.parse(JSON.stringify(snapshot)));
 }
 
-function HudStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border p-2">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold capitalize">{value}</p>
-    </div>
-  );
+function interpolateSnapshot(
+  current: RaidSnapshot,
+  target: RaidSnapshot
+): RaidSnapshot {
+  const next = cloneSnapshot(target);
+
+  next.players = target.players.map((targetPlayer) => {
+    const currentPlayer = current.players.find((player) => player.id === targetPlayer.id);
+    if (!currentPlayer) {
+      return targetPlayer;
+    }
+
+    return {
+      ...targetPlayer,
+      position: lerpPosition(currentPlayer.position, targetPlayer.position)
+    };
+  });
+
+  next.boss = {
+    ...target.boss,
+    position: lerpPosition(current.boss.position, target.boss.position)
+  };
+
+  return next;
+}
+
+function lerpPosition(current: Position, target: Position): Position {
+  return {
+    x: current.x + (target.x - current.x) * INTERPOLATION_ALPHA,
+    y: current.y + (target.y - current.y) * INTERPOLATION_ALPHA
+  };
 }
 
 function drawArena(graphics: Phaser.GameObjects.Graphics) {
@@ -410,7 +361,11 @@ function drawArena(graphics: Phaser.GameObjects.Graphics) {
   graphics.strokeRect(18, 18, GAME_LIMITS.arena.width - 36, GAME_LIMITS.arena.height - 36);
 }
 
-function drawAttack(graphics: Phaser.GameObjects.Graphics, attack: RaidSnapshot["attacks"][number]) {
+function drawAttack(
+  graphics: Phaser.GameObjects.Graphics,
+  attack: RaidSnapshot["attacks"][number],
+  snapshot: RaidSnapshot
+) {
   if (attack.source === "player") {
     graphics.lineStyle(3, 0xfbbf24, 0.8);
     graphics.strokeCircle(attack.origin.x, attack.origin.y, attack.radius);
@@ -418,8 +373,8 @@ function drawAttack(graphics: Phaser.GameObjects.Graphics, attack: RaidSnapshot[
     graphics.lineBetween(
       attack.origin.x,
       attack.origin.y,
-      GAME_LIMITS.arena.width * 0.66,
-      GAME_LIMITS.arena.height / 2
+      snapshot.boss.position.x,
+      snapshot.boss.position.y
     );
     return;
   }
@@ -431,7 +386,7 @@ function drawAttack(graphics: Phaser.GameObjects.Graphics, attack: RaidSnapshot[
   graphics.strokeCircle(attack.origin.x, attack.origin.y, attack.radius);
 }
 
-function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot, nowMs: number) {
+function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot) {
   const { boss } = snapshot;
   const phaseColor =
     boss.phase === "phase_3" ? 0xef4444 : boss.phase === "phase_2" ? 0xf59e0b : 0x8b5cf6;
@@ -451,7 +406,7 @@ function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot,
     boss.position.y + 20
   );
 
-  if (boss.activeShieldUntilMs !== undefined && boss.activeShieldUntilMs > nowMs) {
+  if (boss.activeShieldUntilMs !== undefined && boss.activeShieldUntilMs > snapshot.serverTimeMs) {
     graphics.lineStyle(6, 0xa78bfa, 0.75);
     graphics.strokeCircle(boss.position.x, boss.position.y, 78);
   }
@@ -468,16 +423,20 @@ function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot,
   );
 }
 
-function drawPlayer(graphics: Phaser.GameObjects.Graphics, player: RaidSnapshot["players"][number]) {
+function drawPlayer(
+  graphics: Phaser.GameObjects.Graphics,
+  player: RaidSnapshot["players"][number],
+  isLocalPlayer: boolean
+) {
   const color =
     player.class === "warrior" ? 0xdc2626 : player.class === "ranger" ? 0x10b981 : 0x38bdf8;
 
   graphics.fillStyle(0x020617, 0.72);
   graphics.fillEllipse(player.position.x, player.position.y + 16, 46, 18);
   graphics.fillStyle(color, player.status === "alive" ? 1 : 0.45);
-  graphics.fillCircle(player.position.x, player.position.y, 22);
-  graphics.lineStyle(3, 0xf8fafc, 0.85);
-  graphics.strokeCircle(player.position.x, player.position.y, 22);
+  graphics.fillCircle(player.position.x, player.position.y, isLocalPlayer ? 26 : 22);
+  graphics.lineStyle(isLocalPlayer ? 4 : 3, isLocalPlayer ? 0xfbbf24 : 0xf8fafc, 0.88);
+  graphics.strokeCircle(player.position.x, player.position.y, isLocalPlayer ? 26 : 22);
 
   if (player.class === "warrior") {
     graphics.fillStyle(0xfbbf24, 1);

@@ -11,6 +11,7 @@
   --primary-foreground: #f8fafc;
   --accent: #f59e0b;
   --accent-foreground: #1e293b;
+  --destructive: #b91c1c;
   --border: #cbd5e1;
   --ring: #0f766e;
 }
@@ -26,6 +27,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-ring: var(--ring);
   --font-sans: ui-sans-serif, system-ui, sans-serif;
@@ -44,6 +46,7 @@
     --primary-foreground: #042f2e;
     --accent: #fbbf24;
     --accent-foreground: #1e1b4b;
+    --destructive: #fca5a5;
     --border: #334155;
     --ring: #2dd4bf;
   }

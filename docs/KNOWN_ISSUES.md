@@ -201,7 +201,23 @@ Mitigation:
 Escalate if:
 - Future dependency updates require upgrading Solana CLI, Anchor CLI, or the SBF toolchain.
 
-## KI-014: MagicBlock Rust SDK Needs Local SBF Compatibility Patch
+## KI-014: Day 4 Room Authority Is In-Memory
+
+Severity: medium.
+Status: open, non-blocking for local Day 4 demo.
+
+Issue: the Day 4 create/join room flow uses in-memory Next route handlers as the local authoritative snapshot service. It validates client input, shares snapshots across browser clients, supports reconnect by room code plus player id, and is adequate for local demo smoke tests, but room state resets when the Next process restarts and does not yet route every gameplay input through the MagicBlock `RaidState` PDA.
+
+Mitigation:
+- Keep the limitation visible in `docs/PROGRESS.md`.
+- Use the verified `MB-004` MagicBlock lifecycle smoke as the proof that the compact `RaidState` can be initialized, delegated, mutated, committed, undelegated, and read back on devnet.
+- During `SOL-003` or a dedicated networking hardening pass, replace or augment the in-memory room authority with a durable service and connect final gameplay mutations to the MagicBlock path.
+
+Escalate if:
+- The demo target requires cross-device hosted rooms before a production room service is implemented.
+- The Day 6 settlement flow needs room state after a server restart.
+
+## KI-015: MagicBlock Rust SDK Needs Local SBF Compatibility Patch
 
 Severity: medium.
 Status: mitigated for `MB-002`.
@@ -219,7 +235,7 @@ Escalate if:
 - Future work needs VRF, action-delegation, session-key program integration inside the Anchor program, or MagicBlock crate surfaces trimmed by the local compatibility patch.
 - `anchor test` starts failing with Rust edition, `wincode`, Solana 3.x, or SBF toolchain errors.
 
-## KI-015: MagicBlock Failure Modes And Fallbacks
+## KI-016: MagicBlock Failure Modes And Fallbacks
 
 Severity: medium.
 Status: open.
@@ -245,7 +261,7 @@ Escalate if:
 - A funded devnet authority cannot initialize, delegate, mutate, commit, and undelegate the `RaidState` PDA.
 - The fallback path becomes the only demo path by the end of Day 2.
 
-## KI-016: Devnet Program ID Depends On Ignored Local Deploy Keypair
+## KI-017: Devnet Program ID Depends On Ignored Local Deploy Keypair
 
 Severity: low.
 Status: open local environment issue, mitigated by live deployment.
