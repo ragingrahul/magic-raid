@@ -39,10 +39,12 @@ Goals:
 Tasks:
 - `MB-002`
 - `MB-003`
+- `MB-004`
 - `SOL-001`
 
 Done when:
 - A raid state can be created and updated through the verified authority path.
+- The live devnet lifecycle smoke is complete or its exact blocker is recorded.
 - Anchor skeleton compiles or the blocker is documented.
 - Runbook records exact commands.
 

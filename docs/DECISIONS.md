@@ -166,6 +166,18 @@ Rationale: fresh dependency resolution pulled transitive crates requiring Rust 1
 
 Verification note: run Rust and Anchor checks from the repository root with `CARGO_HOME="$PWD/.cargo-home"`.
 
+## D-022: Vendor SBF-Compatible MagicBlock Rust SDK Patch
+
+Status: accepted and verified in `MB-002`.
+
+Decision: use `ephemeral-rollups-sdk@0.16.2` APIs through local `[patch.crates-io]` vendored crates while this workspace targets Anchor `0.31.1`, Solana CLI `2.1.21`, and the bundled SBF Cargo/Rust `1.79` toolchain. The local patch preserves the delegate and commit APIs required for `MB-002` and trims unused VRF/action-delegation/newer-Solana dependency surfaces that are outside the current spike.
+
+Rationale: the official crate graph pulled transitive crates such as `wincode` and `wincode-derive` that require edition 2024 or a newer compiler than `cargo-build-sbf` provides locally. The vendored compatibility path keeps the MagicBlock authoritative state spike buildable without changing the accepted Anchor/Solana toolchain.
+
+Verification note: `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'`, `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo test'`, and frontend MagicBlock smoke all pass after the patch.
+
+Escalate before using MagicBlock VRF, action-delegation, session-key program integration, or other crate surfaces not exercised by `MB-002`.
+
 ## D-011: Initial Repository Structure
 
 Status: accepted.

@@ -46,10 +46,10 @@ Frontend/client:
 - Docs show `ConnectionMagicRouter` imported from `@magicblock-labs/ephemeral-rollups-sdk`.
 
 Anchor/Rust program:
-- Use Rust crate `ephemeral-rollups-sdk` with `anchor` feature.
+- Use Rust crate `ephemeral-rollups-sdk` with the Anchor-compatible feature path for the selected Anchor version.
 - Crates index latest checked: `ephemeral-rollups-sdk@0.16.2`.
 - Docs command: `cargo add ephemeral-rollups-sdk --features anchor`.
-- The 0.16.x crate exposes modern `anchor` and `anchor-compat` feature paths; final feature selection should match the Anchor version chosen during scaffold.
+- The 0.16.x crate exposes modern `anchor` and `anchor-compat` feature paths. This Anchor `0.31.1` workspace uses `anchor-compat`.
 
 Session Keys:
 - Program crate: `session-keys = { version = "3.1.1", features = ["no-entrypoint"] }`.
@@ -204,13 +204,13 @@ Reason for deferral:
 - Installing `gum-react-sdk` during APP-001 pulled a React Native peer chain that is unnecessary before Session Keys are wired.
 
 Rust dependencies:
-- `ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor"] }`
+- `ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor-compat"] }`
 - `session-keys = { version = "3.1.1", features = ["no-entrypoint"] }`
 
 Local development tool:
 - `@magicblock-labs/ephemeral-validator@0.13.19`
 
-Final Anchor dependency compatibility was verified during `SOL-001` for the current scaffold. The local CLI is `anchor-cli 0.31.1`; the workspace uses `anchor-lang@0.31.1`, Solana CLI `2.1.21`, and a committed SBF-compatible `Cargo.lock`. Recheck compatibility before adding `ephemeral-rollups-sdk@0.16.2` to the Rust program because the MagicBlock docs mention newer Anchor paths too.
+Final Anchor dependency compatibility was verified during `SOL-001` and `MB-002` for the current scaffold. The local CLI is `anchor-cli 0.31.1`; the workspace uses `anchor-lang@0.31.1`, Solana CLI `2.1.21`, `ephemeral-rollups-sdk@0.16.2` with `anchor-compat`, and a committed SBF-compatible `Cargo.lock`. `MB-002` also requires the local `[patch.crates-io]` vendored MagicBlock compatibility path recorded in `D-022`; recheck compatibility before updating MagicBlock Rust crates because the official crate graph includes newer Anchor/Solana paths too.
 
 ## MB-001 Result
 
@@ -221,4 +221,4 @@ Implementation note:
 - Use `CARGO_HOME="$PWD/.cargo-home"` for Rust and Anchor verification from the repository root.
 
 Next task:
-- `GAME-001` for shared game schemas and `MB-002` for the MagicBlock authoritative state spike.
+- `GAME-001` for shared game schemas, then `NET-001` can consume the completed MagicBlock authoritative `RaidState` spike.

@@ -1,6 +1,7 @@
 import { PhaserProbe } from "@/components/phaser-probe";
 import {
   BOSS_STRATEGIES,
+  deriveRaidStatePda,
   MAGICBLOCK_DEVNET
 } from "@/lib/magicblock";
 
@@ -11,6 +12,8 @@ const pillars = [
 ];
 
 export default function Home() {
+  const [raidStatePda] = deriveRaidStatePda();
+
   return (
     <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-7xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -25,8 +28,8 @@ export default function Home() {
               </h1>
             </div>
             <div className="rounded-md border border-border px-3 py-2 text-sm">
-              <span className="font-mono tabular-nums">APP-001</span>
-              <span className="ml-2 text-muted-foreground">scaffold</span>
+              <span className="font-mono tabular-nums">MB-002</span>
+              <span className="ml-2 text-muted-foreground">spike</span>
             </div>
           </div>
 
@@ -81,13 +84,19 @@ export default function Home() {
                   {MAGICBLOCK_DEVNET.asiaValidator}
                 </dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">RaidState PDA</dt>
+                <dd className="mt-1 break-all font-mono text-xs">
+                  {raidStatePda.toBase58()}
+                </dd>
+              </div>
             </dl>
           </div>
 
           <div className="rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6">
             <h2 className="text-xl font-semibold">Next Work</h2>
             <div className="mt-4 space-y-3">
-              {["SOL-001 Anchor scaffold", "GAME-001 shared game schemas", "MB-002 RaidState delegation spike"].map(
+              {["GAME-001 shared game schemas", "NET-001 room sync", "SOL-002 settlement instruction"].map(
                 (item) => (
                   <div
                     key={item}

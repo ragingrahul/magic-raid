@@ -10,7 +10,7 @@ MagicBlock proof -> local game -> multiplayer -> boss engine -> AI -> settlement
 | --- | --- | --- | --- |
 | M0: Bootstrap planning | Day 0 | `PLAN-001`, `PLAN-002` | Agents have aligned docs, tasks, and prompts |
 | M1: Verified scaffold | Day 1 | `MB-001`, `APP-001`, `QA-001` | Repo can build and test locally |
-| M2: MagicBlock proof | Day 2 | `MB-002`, `MB-003`, `SOL-001` | One authoritative state transition exists |
+| M2: MagicBlock proof | Day 2 | `MB-002`, `MB-003`, `MB-004`, `SOL-001` | One authoritative state transition exists |
 | M3: Local playable raid | Day 3 | `GAME-001`, `GAME-002`, `GAME-003`, `GAME-004`, `GAME-005` | One browser can fight a deterministic boss |
 | M4: Multiplayer sync | Day 4 | `NET-001`, `NET-002`, `WEB-001`, `WEB-002` | 2-4 players see the same boss |
 | M5: Adaptive boss | Day 5 | `AI-001`, `AI-002`, `AI-003`, `WEB-003` | Analytics panel triggers visible strategy changes |
@@ -37,6 +37,7 @@ Primary outcome: one low-latency authoritative state transition and one Anchor s
 Tasks:
 - `MB-002`: create a minimal MagicBlock-authoritative raid state spike.
 - `MB-003`: document local/devnet MagicBlock runbook.
+- `MB-004`: run the live MagicBlock devnet lifecycle smoke.
 - `SOL-001`: scaffold the settlement program and first Anchor test.
 
 Stop early if the MagicBlock proof cannot run locally or against a supported dev environment. Use the fallback sync path only for UI progress, and keep the blocker visible.
@@ -103,7 +104,7 @@ Avoid broad refactors on Day 7 unless they unblock the demo.
 ## Required Versus Optional
 
 Required before submission:
-- `MB-001` through `MB-003`
+- `MB-001` through `MB-004`
 - `APP-001`
 - `GAME-001` through `GAME-005`
 - `NET-001`

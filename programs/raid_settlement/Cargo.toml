@@ -18,6 +18,7 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = "0.31.1"
+ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor-compat"] }
 
 # Compatibility pins for Solana CLI 2.1.21 / cargo-build-sbf Rust 1.79.
 # See docs/DECISIONS.md D-021 before changing these.

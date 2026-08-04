@@ -80,6 +80,25 @@ Acceptance criteria:
 Verification commands:
 - `rg "MagicBlock runbook|MagicBlock smoke" docs/PROGRESS.md docs/KNOWN_ISSUES.md`
 
+### MB-004: Run live MagicBlock devnet lifecycle smoke
+
+Priority: required.
+Dependencies: `MB-002`, `MB-003`, `SOL-001`.
+
+Acceptance criteria:
+- The settlement program is deployed or confirmed deployed on Solana devnet with the recorded program ID.
+- A funded devnet authority initializes the `RaidState` PDA.
+- `delegate_raid` delegates the `RaidState` PDA to the Asia ER validator.
+- Magic Router reports `isDelegated: true` for the `RaidState` PDA after delegation.
+- At least one deterministic gameplay mutation, starting with `apply_player_hit`, succeeds through the Magic Router path.
+- `commit_and_undelegate_raid` completes or the exact MagicBlock account/runtime blocker is recorded.
+- The final `RaidState` account can be read from Solana devnet or the exact blocker is recorded.
+
+Verification commands:
+- `zsh -lic 'solana balance --url devnet'`
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor deploy --provider.cluster devnet'`
+- Live lifecycle smoke command documented in `docs/PROGRESS.md`.
+
 ## App Scaffold
 
 ### APP-001: Scaffold frontend workspace

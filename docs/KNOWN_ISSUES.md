@@ -200,3 +200,62 @@ Mitigation:
 
 Escalate if:
 - Future dependency updates require upgrading Solana CLI, Anchor CLI, or the SBF toolchain.
+
+## KI-014: MagicBlock Rust SDK Needs Local SBF Compatibility Patch
+
+Severity: medium.
+Status: mitigated for `MB-002`.
+
+Issue: the official `ephemeral-rollups-sdk@0.16.2` crate graph pulled unused VRF/action-delegation and newer Solana dependency paths that reached crates such as `wincode`/`wincode-derive`. Those crates require edition 2024 or a newer Rust compiler than the Solana CLI `2.1.21` SBF toolchain provides through Cargo/Rust `1.79`.
+
+Mitigation:
+- Keep the local `[patch.crates-io]` entries in the root `Cargo.toml`.
+- Keep the vendored MagicBlock crates under `vendor/`.
+- The patch preserves the `#[ephemeral]`, `#[delegate]`, `delegate_pda`, `DelegateConfig`, and `MagicIntentBundleBuilder` APIs used by `MB-002`.
+- Verify any MagicBlock Rust dependency change with `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'` before trusting it.
+- See `D-022` in `docs/DECISIONS.md`.
+
+Escalate if:
+- Future work needs VRF, action-delegation, session-key program integration inside the Anchor program, or MagicBlock crate surfaces trimmed by the local compatibility patch.
+- `anchor test` starts failing with Rust edition, `wincode`, Solana 3.x, or SBF toolchain errors.
+
+## KI-015: MagicBlock Failure Modes And Fallbacks
+
+Severity: medium.
+Status: open.
+
+Issue: MagicBlock public devnet, Magic Router, ER Asia, Solana devnet, validator routing, delegation status, and commit/undelegation account wiring can fail independently during development or demo rehearsal.
+
+Latest verification:
+- `MB-004` live devnet lifecycle smoke passed on 2026-08-04: deploy, initialize, delegate, `isDelegated: true`, router-routed hit, commit/undelegate, `isDelegated: false`, and final devnet state readback all succeeded.
+
+Mitigation:
+- MagicBlock smoke command: run `zsh -lic 'npm run magicblock:smoke'` from `frontend/` before demos and after dependency changes.
+- Live lifecycle smoke command: run `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/` before claiming the deployed program path still works.
+- If MagicBlock smoke cannot reach Magic Router or ER Asia, fall back to Solana devnet/local deterministic state in the UI and do not claim live ER authority until smoke passes again.
+- If `getClosestValidator` returns a validator other than `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`, record the value and confirm whether router geography changed before hardcoding assumptions.
+- If `getDelegationStatus` returns `isDelegated: false` for the `RaidState` PDA before a live delegate transaction, treat that as normal readiness, not a failure.
+- If `getDelegationStatus` returns `isDelegated: false` after a delegate transaction, verify the program id, PDA seed `raid-state`, authority wallet, funding, and the validator remaining account used by `delegate_raid`.
+- If gameplay mutation fails after delegation, route transactions through Magic Router and verify the signer is the stored `RaidState.authority`.
+- If `commit_raid` or `commit_and_undelegate_raid` fails, surface a pending settlement state, keep the final local/ER snapshot visible, retry `commit_raid` first, and only show final settlement after base-layer state is readable.
+- If shell startup warnings appear under `zsh -lic` but the command exits 0, treat them as non-blocking local shell initialization noise.
+
+Escalate if:
+- MagicBlock smoke fails repeatedly from the same network.
+- A funded devnet authority cannot initialize, delegate, mutate, commit, and undelegate the `RaidState` PDA.
+- The fallback path becomes the only demo path by the end of Day 2.
+
+## KI-016: Devnet Program ID Depends On Ignored Local Deploy Keypair
+
+Severity: low.
+Status: open local environment issue, mitigated by live deployment.
+
+Issue: the deployed devnet program ID `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72` comes from `target/deploy/raid_settlement-keypair.json`, and `target/` is intentionally ignored. The program is already deployed on Solana devnet and upgrade authority is the local devnet authority, but a fresh clone will not contain the original initial-deploy keypair unless it is supplied separately.
+
+Mitigation:
+- Keep the program ID recorded in `Anchor.toml`, `programs/raid_settlement/src/lib.rs`, and frontend MagicBlock constants.
+- Use the current local workspace for upgrades while the hackathon demo depends on this exact devnet program.
+- If the deploy keypair is unavailable in a fresh environment and the program must be redeployed from scratch, generate a new program keypair, update all recorded program IDs, redeploy, and rerun `npm run magicblock:live-smoke`.
+
+Escalate if:
+- A different machine must upgrade the same devnet program and cannot access the current upgrade authority/keypair setup.

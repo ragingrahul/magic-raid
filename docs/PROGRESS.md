@@ -15,10 +15,10 @@ Repository contents:
 
 Missing:
 - No backend source files.
-- No final settlement instruction beyond the `SOL-001` skeleton.
-- No MagicBlock-authoritative raid state implementation yet.
+- No final raid-result settlement instruction beyond the `SOL-001` skeleton.
+- No browser gameplay loop, multiplayer sync, AI strategy submitter, wallet UI, or final settlement UI yet.
 
-Assessment: frontend and Anchor scaffolds exist. Baseline frontend and Solana scaffold verification commands pass. Backend, MagicBlock state, game rules, multiplayer, AI, and final settlement logic have not started.
+Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, and the `MB-004` live devnet lifecycle smoke pass. Full gameplay, multiplayer, AI, wallet integration, and final settlement UI remain ahead.
 
 ## Task Status
 
@@ -27,10 +27,13 @@ Assessment: frontend and Anchor scaffolds exist. Baseline frontend and Solana sc
 | `PLAN-001` | Complete | Planning docs drafted from `prompts/bootstrap.md`. |
 | `PLAN-002` | Complete | Specialist prompt files drafted. |
 | `MB-001` | Complete for planning | Official docs, endpoints, package names, package versions, and local toolchain availability recorded in `docs/MAGICBLOCK_VERIFICATION.md`. |
+| `MB-002` | Complete | Compact `RaidState` PDA, deterministic hit transition, MagicBlock delegate/commit/commit-and-undelegate instruction surface, frontend PDA constants, and smoke test are implemented and verified. |
+| `MB-003` | Complete | MagicBlock runbook, smoke command, environment values, SDK patch decision, and failure-mode fallbacks are documented. |
+| `MB-004` | Complete | Program deployed to Solana devnet and live initialize/delegate/router-hit/commit-and-undelegate/readback smoke passed. |
 | `APP-001` | Complete | Next.js frontend scaffold created under `frontend/`; typecheck, lint, test, and build pass. |
 | `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
 | `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
-| Game, AI, networking, settlement, remaining QA, demo tasks | Not started | Await shared game schema and MagicBlock state implementation. |
+| Game, AI, networking, settlement, remaining QA, demo tasks | Not started | Await shared game schemas, gameplay loop, room sync, AI strategy, wallet UI, and final settlement flow. |
 
 ## Repository Assessment Commands Run
 
@@ -94,9 +97,104 @@ Bootstrap consistency review:
 - Direct unprefixed `anchor test` failed in this local environment because the global Cargo registry cache contains root-owned entries; use the local `CARGO_HOME="$PWD/.cargo-home"` convention recorded in `docs/KNOWN_ISSUES.md`.
 - Anchor/Rust macro expansion emits non-blocking `unexpected cfg` warnings under the host Rust toolchain; verification commands still exit 0.
 
+`MB-002` verification, run on 2026-08-04:
+- Implemented a compact authoritative `RaidState` PDA at seed `raid-state` for program `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
+- `RaidState` stores raid id, authority, lifecycle, boss HP, timer, strategy enum, player count, and bounded per-player damage contributions.
+- Added deterministic mutation through `apply_player_hit`: only the authority signer can mutate, player indexes are bounded, hit damage is capped at `250`, final hits clamp to remaining boss HP, contribution math is checked, and terminal raids reject further mutation.
+- Added MagicBlock program integration with `#[ephemeral]`, `#[delegate]`, `delegate_raid`, `commit_raid`, and `commit_and_undelegate_raid`.
+- Added frontend MagicBlock constants, deterministic `deriveRaidStatePda`, and `frontend/scripts/magicblock-smoke.mjs`.
+- Added local SBF-compatible vendor patches for the MagicBlock Rust crates under `vendor/`; see `D-022` in `docs/DECISIONS.md`.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo fmt --all --check'`: passed.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo test'`: passed; 9 Rust tests passed.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'`: passed; SBF build completed and 9 Rust tests passed.
+- `zsh -lic 'npm run typecheck'` from `frontend/`: passed.
+- `zsh -lic 'npm run lint'` from `frontend/`: passed.
+- `zsh -lic 'npm run test'` from `frontend/`: passed; 1 test file and 4 tests passed.
+- `zsh -lic 'npm run magicblock:smoke'` from `frontend/`: passed.
+- MagicBlock smoke derived `RaidState` PDA `9RBTUMV256FVkNnEBZWrgWYK63YjYbUzWAYvWnjQzeny` with bump `254`, reached Magic Router, resolved closest validator `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57` at `https://devnet-as.magicblock.app/`, confirmed the fresh PDA is not delegated yet, confirmed Solana devnet core `4.1.2`, and confirmed ER Asia reports MagicBlock core `0.13.19` with Solana core `4.0.0`.
+- This smoke confirms endpoint reachability, PDA derivation, router API shape, and undelegated-state readiness. The full live transaction lifecycle is covered by `MB-004`.
+
+`MB-003` verification:
+- This file now records the MagicBlock runbook, setup values, run commands, and smoke-test interpretation.
+- `docs/KNOWN_ISSUES.md` records MagicBlock smoke failures, delegation-state failures, SDK/SBF compatibility risks, and fallback steps.
+- Fresh-agent verification command: `rg "MagicBlock runbook|MagicBlock smoke" docs/PROGRESS.md docs/KNOWN_ISSUES.md`.
+
+`MB-004` live devnet lifecycle verification, run on 2026-08-04:
+- Confirmed local devnet authority `HiT7oAoWmxebzpuUoY9HrYZeSR4ScEP7vARVs3vVQb5J` had sufficient devnet SOL.
+- Confirmed `target/deploy/raid_settlement-keypair.json` matches program id `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
+- Confirmed the program was absent from Solana devnet before deployment.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor deploy --provider.cluster devnet'`: passed; deploy signature `4Ukc8uhs2j5GLwDB9DiDuGDPBUvC9VFLPSNVjpiMUPKL8DMaoCBUKtWhoDhHGkHWWTgNFtHZ86tYpuzz4YXtDsDy`.
+- Added repeatable live lifecycle script `frontend/scripts/magicblock-live-smoke.mjs` and package script `npm run magicblock:live-smoke`.
+- `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/`: passed.
+- Live smoke initialized `RaidState` with signature `3c9geeGHfE4y94Zw6tabnK2umZR9JjZPTDVkPPr3PRuUxPUCd7RCwjTx6xXfKn3tgkiwBMSWWAx95XmVZzSJoUYH`.
+- Live smoke delegated `RaidState` with signature `5w9EEq8q7x1rTL3jp6CYpsEeRC7Zun1V6dvQjG68UkTogMiqkNb1PH3DaDix9k51a4d7wZbVDwhymY5o2YYpnR1D`.
+- Magic Router reported `isDelegated: true`, `fqdn: https://devnet-as.magicblock.app/`, delegation authority `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`, delegation owner `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`, and delegation slot `481203017`.
+- Live smoke applied one router-routed hit with signature `JSpmvJEHJBvzEjb8ger8NLy2L6Ji6AqL81vqCdi3qpZsurtABaYyF3fqUxjx5ehjR1BSK9Syp1Vn9ZPJJfmAVZt`; router state changed from boss HP `1200` and contribution `[0, ...]` to boss HP `1199` and contribution `[1, 0, 0, 0, 0, 0, 0, 0]`.
+- Live smoke committed and undelegated with signature `5XetsHAcFfuHLVTFwQZBSvWRuwcc8YYW48JDU8a82ESh12iAD8yVzECvxfHGv2vyMSgvtVyXxCTKGmnYKc7A8f3M`.
+- Magic Router reported `isDelegated: false` after commit/undelegate.
+- Final Solana devnet readback returned owner `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`, lifecycle `active`, boss HP `1199`, player count `4`, strategy `area_denial`, and contribution damage `[1, 0, 0, 0, 0, 0, 0, 0]`.
+
+## MagicBlock runbook
+
+Current public devnet configuration:
+- Magic Router RPC: `https://devnet-router.magicblock.app`.
+- Magic Router WebSocket: `wss://devnet-router.magicblock.app/`.
+- Solana devnet RPC: `https://api.devnet.solana.com`.
+- ER Asia RPC: `https://devnet-as.magicblock.app`.
+- ER Asia WebSocket: `wss://devnet-as.magicblock.app/`.
+- Asia ER validator: `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`.
+- Delegation program: `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`.
+- Raid settlement program: `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
+- Raid state PDA seed: `raid-state`.
+- Derived `RaidState` PDA for the current program id: `9RBTUMV256FVkNnEBZWrgWYK63YjYbUzWAYvWnjQzeny`, bump `254`.
+
+Suggested environment variable names if the public constants move out of source later:
+- `NEXT_PUBLIC_MAGICBLOCK_ROUTER_RPC=https://devnet-router.magicblock.app`.
+- `NEXT_PUBLIC_MAGICBLOCK_ROUTER_WS=wss://devnet-router.magicblock.app/`.
+- `NEXT_PUBLIC_SOLANA_DEVNET_RPC=https://api.devnet.solana.com`.
+- `NEXT_PUBLIC_MAGICBLOCK_ER_ASIA_RPC=https://devnet-as.magicblock.app`.
+- `NEXT_PUBLIC_MAGICBLOCK_ER_ASIA_WS=wss://devnet-as.magicblock.app/`.
+- `NEXT_PUBLIC_MAGICBLOCK_ASIA_VALIDATOR=MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`.
+- `NEXT_PUBLIC_RAID_SETTLEMENT_PROGRAM_ID=2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
+
+Setup and verification commands:
+- From the repository root, run toolchain commands through `zsh -lic`.
+- Rust and Anchor commands must use `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+- If frontend dependencies are missing, run `zsh -lic 'pnpm install --store-dir .pnpm-store'` from `frontend/`.
+- Run `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo fmt --all --check'` from the repository root.
+- Run `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo test'` from the repository root.
+- Run `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'` from the repository root.
+- Deploy or upgrade the devnet program with `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor deploy --provider.cluster devnet'` from the repository root.
+- Run `zsh -lic 'npm run typecheck'` from `frontend/`.
+- Run `zsh -lic 'npm run lint'` from `frontend/`.
+- Run `zsh -lic 'npm run test'` from `frontend/`.
+- MagicBlock smoke: run `zsh -lic 'npm run magicblock:smoke'` from `frontend/`.
+- Live MagicBlock lifecycle smoke: run `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/`; set `SOLANA_KEYPAIR=/path/to/funded-devnet-keypair.json` to override the default `~/.config/solana/id.json`.
+
+Expected MagicBlock smoke interpretation:
+- `closestValidator.ok` should be `true` and should resolve to the Asia validator for this project.
+- `raidStateDelegationStatus.ok` should be `true`.
+- `raidStateDelegationStatus.value.isDelegated` is expected to be `false` before a real initialize/delegate transaction runs.
+- `solanaDevnetVersion.ok` and `erAsiaVersion.ok` should both be `true`.
+
+Program lifecycle for the live devnet path:
+1. Build and deploy the Anchor program to Solana devnet with the generated program id.
+2. Fund the authority wallet.
+3. Initialize the `RaidState` PDA with seed `raid-state`.
+4. Delegate the `RaidState` PDA with `delegate_raid`, passing the Asia validator as the first remaining account.
+5. Send deterministic gameplay mutations, starting with `apply_player_hit`, through Magic Router after delegation.
+6. Use `commit_raid` for mid-raid state sync if the UI or debug panel needs base-layer visibility.
+7. Use `commit_and_undelegate_raid` when the raid reaches victory or timeout.
+8. Read the final account from Solana devnet before final settlement display.
+
+Latest live lifecycle result:
+- Program deploy succeeded on Solana devnet.
+- `initialize_raid`, `delegate_raid`, router-routed `apply_player_hit`, `commit_and_undelegate_raid`, router undelegation check, and final devnet account readback all passed.
+- Because `RaidState` currently uses a single fixed seed, rerunning the live smoke reuses the existing PDA instead of creating a fresh raid account.
+
 ## Immediate Next Step
 
-Start `GAME-001` to expand shared game schemas and constants, then continue the MagicBlock proof path with `MB-002`. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Start `GAME-001` to expand shared game schemas and constants, then let `NET-001` consume the completed `MB-002` `RaidState` PDA path. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.
