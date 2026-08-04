@@ -9,16 +9,16 @@ Date: 2026-08-04.
 Repository contents:
 - `docs/`: planning documents.
 - `prompts/`: specialist agent prompts.
-- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 probe, Zod schemas, Vitest, and ESLint.
+- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 local raid arena, Zod schemas, Vitest, and ESLint.
 - `Anchor.toml` and `Cargo.toml`: Anchor/Rust workspace scaffold.
 - `programs/raid_settlement/`: Anchor settlement program skeleton.
 
 Missing:
 - No backend source files.
 - No final raid-result settlement instruction beyond the `SOL-001` skeleton.
-- No browser gameplay loop, multiplayer sync, AI strategy submitter, wallet UI, or final settlement UI yet.
+- No multiplayer sync, AI strategy submitter, wallet UI, or final settlement UI yet.
 
-Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, and the `MB-004` live devnet lifecycle smoke pass. Full gameplay, multiplayer, AI, wallet integration, and final settlement UI remain ahead.
+Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, and `GAME-002` through `GAME-004` local gameplay pass. Multiplayer, AI, wallet integration, and final settlement UI remain ahead.
 
 ## Task Status
 
@@ -31,9 +31,13 @@ Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaff
 | `MB-003` | Complete | MagicBlock runbook, smoke command, environment values, SDK patch decision, and failure-mode fallbacks are documented. |
 | `MB-004` | Complete | Program deployed to Solana devnet and live initialize/delegate/router-hit/commit-and-undelegate/readback smoke passed. |
 | `APP-001` | Complete | Next.js frontend scaffold created under `frontend/`; typecheck, lint, test, and build pass. |
+| `GAME-001` | Complete | Shared game bounds, cooldown constants, gameplay state schemas, network payload schemas, AI analytics/strategy schemas, and settlement summary schemas are implemented and verified. |
+| `GAME-002` | Complete | Phaser renders a snapshot-driven local arena with player movement, boss/player sprites, HP bars, attack indicators, and React action controls. |
+| `GAME-003` | Complete | Warrior, Ranger, and Mage normal/special attacks use deterministic damage, range, cooldown, damage type, and bounds. |
+| `GAME-004` | Complete | Boss phases, Cleave, Ground Slam, Leap, Arcane Shield, Marked Strike, strategy-influenced attack preference, and cooldown rules are implemented and verified. |
 | `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
 | `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
-| Game, AI, networking, settlement, remaining QA, demo tasks | Not started | Await shared game schemas, gameplay loop, room sync, AI strategy, wallet UI, and final settlement flow. |
+| Remaining game, AI, networking, settlement, QA, demo tasks | Not started | Await contribution scoring terminal polish, room sync, AI strategy, wallet UI, and final settlement flow. |
 
 ## Repository Assessment Commands Run
 
@@ -134,6 +138,32 @@ Bootstrap consistency review:
 - Magic Router reported `isDelegated: false` after commit/undelegate.
 - Final Solana devnet readback returned owner `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`, lifecycle `active`, boss HP `1199`, player count `4`, strategy `area_denial`, and contribution damage `[1, 0, 0, 0, 0, 0, 0, 0]`.
 
+`GAME-001` verification, run on 2026-08-04 from `frontend/`:
+- Expanded `frontend/src/game/schemas.ts` into the shared gameplay contract for raid status, raid result, player class, boss strategy, boss phase, player state, boss state, attacks, client input messages, server snapshot messages, analytics summaries, AI strategy decisions, and settlement summaries.
+- Added constants for player bounds, arena size, raid duration, boss HP, attack caps, cooldowns, network tick/input limits, and contribution score bounds.
+- `frontend/src/lib/magicblock.ts` now reuses the shared game bounds for `RAID_STATE_RULES` and re-exports the approved boss strategy schema without changing existing imports.
+- Added Vitest coverage for raid snapshots, invalid movement and arena payloads, AI analytics and strategy decisions, settlement summary score bounds, MagicBlock constants, and cooldown bounds.
+- `zsh -lic 'npm run typecheck'`: passed.
+- `zsh -lic 'npm run test -- game'`: passed; 1 test file and 8 tests passed.
+- `zsh -lic 'npm run test'`: passed; 1 test file and 8 tests passed.
+- `zsh -lic 'npm run lint'`: passed.
+- The `zsh -lic` shell startup emitted the known non-blocking local shell initialization warnings (`compinit` and Bun completion), but all commands exited 0.
+
+`GAME-002`, `GAME-003`, and `GAME-004` verification, run on 2026-08-04 from `frontend/`:
+- Added deterministic gameplay rules in `frontend/src/game/rules.ts` for snapshot creation, arena-bounded movement, class attacks, cooldown enforcement, damage bounds, contribution damage, boss phases, boss attacks, strategy-influenced boss attack priority, Magic Shield resistance, defeat, victory, and timeout transitions.
+- Added `frontend/src/components/phaser-arena.tsx`, replacing the old runtime probe on the home page with a playable local Phaser arena that renders procedural top-down player and boss sprites, arena bounds, HP bars, attack indicators, class controls, action buttons, status, phase, damage, and strategy selection from authoritative snapshots.
+- Updated `frontend/src/game/schemas.ts` so boss snapshots include per-attack ready times for deterministic boss cooldowns.
+- Added Vitest coverage in `frontend/src/game/__tests__/rules.test.ts` and `frontend/src/game/__tests__/boss.test.ts`.
+- `zsh -lic 'npm run typecheck'`: passed.
+- `zsh -lic 'npm run lint'`: passed.
+- `zsh -lic 'npm run test -- game'`: passed; 3 test files and 23 tests passed.
+- `zsh -lic 'npm run test -- boss'`: passed; 1 test file and 6 tests passed.
+- `zsh -lic 'npm run test'`: passed; 3 test files and 23 tests passed.
+- Local app manual check: `zsh -lic 'npm run dev -- --port 3000'` served `http://localhost:3000`.
+- Browser check used transient `playwright@1.56.1` outside the repo to capture `/tmp/magicraid-arena-desktop.png` at `1280x900` and `/tmp/magicraid-arena-mobile.png` at `375x900`; both screenshots showed a nonblank Phaser canvas with player, boss, HP bars, controls, and no incoherent overlap after the sizing fix.
+- The in-app Browser control tool was not exposed by tool discovery in this session, so the manual check used the transient Playwright CLI instead.
+- The `zsh -lic` shell startup emitted the known non-blocking local shell initialization warnings (`compinit` and Bun completion), but all verification commands exited 0.
+
 ## MagicBlock runbook
 
 Current public devnet configuration:
@@ -194,7 +224,7 @@ Latest live lifecycle result:
 
 ## Immediate Next Step
 
-Start `GAME-001` to expand shared game schemas and constants, then let `NET-001` consume the completed `MB-002` `RaidState` PDA path. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Continue with `GAME-005` to finish contribution scoring and terminal-state polish, then start `NET-001` to consume the completed `MB-002` `RaidState` PDA path from the local arena contract. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.

@@ -70,3 +70,9 @@ select,
 textarea {
   font: inherit;
 }
+
+.magicraid-arena canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}

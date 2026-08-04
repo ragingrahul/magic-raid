@@ -1,6 +1,5 @@
-import { PhaserProbe } from "@/components/phaser-probe";
+import { PhaserArena } from "@/components/phaser-arena";
 import {
-  BOSS_STRATEGIES,
   deriveRaidStatePda,
   MAGICBLOCK_DEVNET
 } from "@/lib/magicblock";
@@ -45,24 +44,10 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="mt-6 grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="mt-6 flex-1">
             <div className="min-h-80 rounded-lg border border-border bg-muted/40 p-3">
-              <PhaserProbe />
+              <PhaserArena />
             </div>
-            <aside className="rounded-lg border border-border p-4">
-              <h2 className="text-base font-semibold">Strategy Set</h2>
-              <ul className="mt-3 space-y-2">
-                {BOSS_STRATEGIES.map((strategy) => (
-                  <li
-                    key={strategy}
-                    className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm"
-                  >
-                    <span>{strategy.replaceAll("_", " ")}</span>
-                    <span className="font-mono text-xs text-muted-foreground">enum</span>
-                  </li>
-                ))}
-              </ul>
-            </aside>
           </div>
         </section>
 
@@ -96,7 +81,7 @@ export default function Home() {
           <div className="rounded-lg border border-border bg-card p-4 text-card-foreground md:p-6">
             <h2 className="text-xl font-semibold">Next Work</h2>
             <div className="mt-4 space-y-3">
-              {["GAME-001 shared game schemas", "NET-001 room sync", "SOL-002 settlement instruction"].map(
+              {["NET-001 room sync", "AI-001 analytics summary", "SOL-002 settlement instruction"].map(
                 (item) => (
                   <div
                     key={item}

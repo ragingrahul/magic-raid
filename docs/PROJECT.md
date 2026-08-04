@@ -144,10 +144,10 @@ The hackathon demo is successful when:
 
 ## Immediate Next Task
 
-`MB-001`, `APP-001`, `QA-001`, and `SOL-001` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
+`MB-001`, `MB-002`, `MB-003`, `MB-004`, `APP-001`, `QA-001`, `SOL-001`, and `GAME-001` through `GAME-004` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
 
 Next begin:
-- `GAME-001`: expand shared game schemas and constants.
-- `MB-002`: build the minimal authoritative raid state spike.
+- `GAME-005`: finish contribution scoring and terminal-state polish.
+- `NET-001`: consume the completed MagicBlock-authoritative `RaidState` PDA path from the local arena contract.
 
 Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`. Run Rust and Anchor verification with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.

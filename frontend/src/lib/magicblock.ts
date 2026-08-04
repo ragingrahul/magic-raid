@@ -1,5 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
-import { z } from "zod";
+import {
+  BossStrategySchema,
+  GAME_LIMITS,
+  type BossStrategy
+} from "@/game/schemas";
 
 export const MAGICBLOCK_DEVNET = {
   routerRpc: "https://devnet-router.magicblock.app",
@@ -17,23 +21,15 @@ export const RAID_SETTLEMENT_PROGRAM_ID = new PublicKey(
 export const RAID_STATE_SEED = "raid-state";
 
 export const RAID_STATE_RULES = {
-  bossMaxHp: 1200,
-  maxHitDamage: 250,
-  durationSeconds: 180,
-  maxPlayers: 8
+  bossMaxHp: GAME_LIMITS.boss.maxHp,
+  maxHitDamage: GAME_LIMITS.attacks.maxHitDamage,
+  durationSeconds: GAME_LIMITS.raid.durationSeconds,
+  maxPlayers: GAME_LIMITS.players.max
 } as const;
-
-export const BossStrategySchema = z.enum([
-  "area_denial",
-  "leap_to_ranged",
-  "magic_resistance",
-  "focus_healer",
-  "melee_retaliation"
-]);
 
 export const BOSS_STRATEGIES = BossStrategySchema.options;
 
-export type BossStrategy = z.infer<typeof BossStrategySchema>;
+export { BossStrategySchema, type BossStrategy };
 
 export function deriveRaidStatePda(
   programId: PublicKey = RAID_SETTLEMENT_PROGRAM_ID
