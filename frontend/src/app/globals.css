@@ -1,19 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --muted: #e2e8f0;
-  --muted-foreground: #475569;
-  --primary: #0f766e;
-  --primary-foreground: #f8fafc;
-  --accent: #f59e0b;
-  --accent-foreground: #1e293b;
-  --destructive: #b91c1c;
-  --border: #cbd5e1;
-  --ring: #0f766e;
+  --background: #ece0c8;
+  --foreground: #2a1e12;
+  --card: #f4e9d2;
+  --card-foreground: #2a1e12;
+  --muted: #ddc9a3;
+  --muted-foreground: #6b5738;
+  --primary: #9a5b12;
+  --primary-foreground: #fbf1dd;
+  --accent: #5b2a9d;
+  --accent-foreground: #f4e9d2;
+  --destructive: #a8271f;
+  --border: #c3a877;
+  --ring: #9a5b12;
+  --panel-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.35) inset, 0 10px 26px -16px rgba(42, 30, 18, 0.55);
+  --panel-edge: rgba(42, 30, 18, 0.12);
 }
 
 @theme inline {
@@ -32,23 +34,26 @@
   --color-ring: var(--ring);
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-display: var(--font-cinzel), "Cinzel", ui-serif, Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #020617;
-    --foreground: #e2e8f0;
-    --card: #0f172a;
-    --card-foreground: #e2e8f0;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
-    --primary: #2dd4bf;
-    --primary-foreground: #042f2e;
-    --accent: #fbbf24;
-    --accent-foreground: #1e1b4b;
-    --destructive: #fca5a5;
-    --border: #334155;
-    --ring: #2dd4bf;
+    --background: #0e0b10;
+    --foreground: #ece1cc;
+    --card: #1b151a;
+    --card-foreground: #ece1cc;
+    --muted: #241c22;
+    --muted-foreground: #a4917a;
+    --primary: #e2a542;
+    --primary-foreground: #221304;
+    --accent: #a684e8;
+    --accent-foreground: #1c1327;
+    --destructive: #f0776b;
+    --border: #40332f;
+    --ring: #e2a542;
+    --panel-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05) inset, 0 12px 30px -16px rgba(0, 0, 0, 0.75);
+    --panel-edge: rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -63,7 +68,9 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background: var(--background);
+  background:
+    radial-gradient(ellipse 120% 70% at 50% -10%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 60%),
+    var(--background);
   color: var(--foreground);
 }
 
@@ -78,4 +85,49 @@ textarea {
   display: block;
   width: 100% !important;
   height: 100% !important;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+@layer components {
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+  }
+
+  .panel {
+    position: relative;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--card-foreground);
+    padding: 1rem;
+    box-shadow: var(--panel-shadow);
+  }
+
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(160deg, var(--panel-edge), transparent 40%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  @media (min-width: 768px) {
+    .panel {
+      padding: 1.5rem;
+    }
+  }
 }

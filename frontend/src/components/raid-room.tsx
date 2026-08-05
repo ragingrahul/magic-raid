@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PhaserArena } from "@/components/phaser-arena";
+import { BOSS_TIER_BY_PHASE, CLASS_PORTRAIT, orcSheetPath } from "@/game/sprites";
 import {
   GAME_LIMITS,
   PLAYER_CLASSES,
@@ -12,12 +13,12 @@ import {
   RoomStrategyUpdateSchema,
   RoomSessionSchema,
   SolanaAddressSchema,
+  type BossPhase,
   type BossStrategyDecision,
   type BossStrategy,
   type PlayerAttackKind,
   type PlayerClass,
   type Position,
-  type RaidAnalyticsSummary,
   type RoomAuthorityStatus,
   type RoomSettlementStatus,
   type RaidSnapshot,
@@ -125,10 +126,7 @@ export function RaidRoom() {
   const [wallet, setWallet] = useState<WalletState | null>(null);
   const [walletStatus, setWalletStatus] = useState<WalletStatus>("idle");
   const [walletError, setWalletError] = useState<string | null>(null);
-  const [analytics, setAnalytics] = useState<RaidAnalyticsSummary | null>(null);
   const [lastDecision, setLastDecision] = useState<BossStrategyDecision | null>(null);
-  const [adaptationCount, setAdaptationCount] = useState(0);
-  const [strategyError, setStrategyError] = useState<string | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<RoomAuthorityStatus | null>(null);
   const [settlementStatus, setSettlementStatus] = useState<RoomSettlementStatus | null>(null);
   const [settlementBusy, setSettlementBusy] = useState(false);
@@ -175,10 +173,7 @@ export function RaidRoom() {
       setRoomStatus("connected");
       setFormError(null);
       setSyncError(null);
-      setAnalytics(null);
       setLastDecision(null);
-      setAdaptationCount(0);
-      setStrategyError(null);
       setSettlementStatus(null);
       setSettlementBusy(false);
     },
@@ -309,16 +304,9 @@ export function RaidRoom() {
           current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
         );
         setAuthorityStatus(parsed.authority ?? null);
-        setAnalytics(parsed.analytics);
         setLastDecision(parsed.lastDecision ?? null);
-        setAdaptationCount(parsed.adaptationCount);
-        setStrategyError(null);
-      } catch (error) {
-        if (!cancelled) {
-          setStrategyError(
-            error instanceof Error ? error.message : "Strategy update failed."
-          );
-        }
+      } catch {
+        // Background strategy telemetry isn't player-facing; ignore transient failures.
       }
     }
 
@@ -618,10 +606,7 @@ export function RaidRoom() {
     setRoomStatus("idle");
     setSyncError(null);
     setFormError(null);
-    setAnalytics(null);
     setLastDecision(null);
-    setAdaptationCount(0);
-    setStrategyError(null);
     setAuthorityStatus(null);
     setSettlementStatus(null);
     setSettlementBusy(false);
@@ -650,6 +635,14 @@ export function RaidRoom() {
     Boolean(session && terminalRaid && walletsReady) &&
     snapshot?.status !== "settled" &&
     !settlementBusy;
+  const settlementDisabledReason = !terminalRaid
+    ? null
+    : !walletsReady
+      ? "Wallets missing"
+      : snapshot?.status === "settled"
+        ? "Settled"
+        : null;
+  const resultLabel = formatLabel(settlementStatus?.summary?.result ?? snapshot?.status);
   const bossStrategy = snapshot?.boss.strategy ?? "area_denial";
   const strategyTell = STRATEGY_TELLS[bossStrategy];
   const strategyJustChanged = Boolean(
@@ -660,45 +653,97 @@ export function RaidRoom() {
   );
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="grid gap-3">
-        <PhaserArena
-          snapshot={snapshot}
-          localPlayerId={session?.playerId ?? null}
-          interactive={canAct}
-          onMove={sendMove}
-          onAttack={sendAttack}
-        />
+    <div className="relative h-screen w-screen overflow-hidden bg-background">
+      <PhaserArena
+        snapshot={snapshot}
+        localPlayerId={session?.playerId ?? null}
+        interactive={canAct}
+        onMove={sendMove}
+        onAttack={sendAttack}
+      />
 
-        <div className="rounded-md border border-border bg-card p-3 text-card-foreground">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.4fr]">
-            <HudBar label="Boss" value={bossHp} max={bossMaxHp} />
-            <HudBar label="Raider" value={localHp} max={localMaxHp} />
+      {session ? (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-2 p-4">
+            <div className="panel pointer-events-auto w-full max-w-md py-2! px-4!">
+              <HudBar label="Boss" value={bossHp} max={bossMaxHp} />
+              <div className={`mt-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs ${strategyTell.className}`}>
+                <span className="font-semibold uppercase">
+                  {strategyJustChanged ? "Adapting" : strategyTell.label}
+                </span>
+                <span className="truncate text-right">{strategyTell.tell}</span>
+              </div>
+            </div>
 
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <HudStat label="Phase" value={snapshot?.boss.phase.replace("_", " ") ?? "phase 1"} />
-              <HudStat label="Status" value={snapshot?.status ?? "idle"} />
-              <HudStat label="Damage" value={localDamage.toString()} />
-              <HudStat label="Tick" value={(snapshot?.tick ?? 0).toString()} />
+            {syncError ? (
+              <div className="panel pointer-events-auto flex items-center gap-2 border-destructive/50 py-1.5! px-3! text-xs text-destructive">
+                <span>{syncError}</span>
+                <button
+                  type="button"
+                  onClick={() => setRoomStatus("reconnecting")}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="pointer-events-none absolute left-4 top-4 z-10 flex flex-col gap-1.5">
+            {snapshot?.players.map((player) => (
+              <div
+                key={player.id}
+                className="panel pointer-events-auto flex w-40 items-center gap-2 py-1.5! px-2.5!"
+              >
+                <span
+                  className={`pixel-art h-6 w-6 shrink-0 rounded-full bg-contain bg-center bg-no-repeat ${
+                    player.status === "alive" ? "" : "opacity-35 grayscale"
+                  }`}
+                  style={{ backgroundImage: `url(${CLASS_PORTRAIT[player.class]})` }}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                  {player.displayName}
+                </span>
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {player.hp}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="pointer-events-none absolute right-4 top-4 z-10">
+            <div className="panel pointer-events-auto flex items-center gap-2 py-1.5! px-3!">
+              <span className="font-mono text-xs tracking-widest">{session.roomCode}</span>
+              <button
+                type="button"
+                onClick={copyRoomCode}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {copiedRoom ? "Copied" : "Copy"}
+              </button>
+              <button
+                type="button"
+                onClick={leaveRoom}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Leave
+              </button>
             </div>
           </div>
 
-          <div className={`mt-3 rounded-md border px-3 py-2 ${strategyTell.className}`}>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-xs font-semibold uppercase">Boss Tell</span>
-              <span className="text-sm font-semibold">
-                {strategyJustChanged ? "Adapting" : strategyTell.label}
-              </span>
+          <div className="pointer-events-none absolute left-4 bottom-4 z-10 w-56">
+            <div className="panel pointer-events-auto py-2! px-3!">
+              <HudBar label="You" value={localHp} max={localMaxHp} />
             </div>
-            <p className="mt-1 text-sm font-medium">{strategyTell.tell}</p>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center gap-3">
             <button
               type="button"
               onClick={() => sendAttack("normal")}
               disabled={!canAct}
-              className="min-h-10 rounded-md border border-border bg-card px-3 text-sm font-medium text-card-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+              className="pointer-events-auto min-h-12 min-w-24 rounded-md border border-border bg-card px-4 text-sm font-medium text-card-foreground shadow-[var(--panel-shadow)] transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
             >
               Strike
             </button>
@@ -706,63 +751,67 @@ export function RaidRoom() {
               type="button"
               onClick={() => sendAttack("special")}
               disabled={!canAct}
-              className="min-h-10 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+              className="pointer-events-auto min-h-12 min-w-24 rounded-md bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-[var(--panel-shadow)] transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
             >
               Special
             </button>
           </div>
-        </div>
-      </section>
+        </>
+      ) : null}
 
-      <aside className="grid content-start gap-3">
-        <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">Wallet</h2>
-            <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-              Devnet
-            </span>
-          </div>
-          <WalletControls
-            wallet={wallet}
-            walletStatus={walletStatus}
-            walletError={walletError}
-            onConnectInjected={connectInjectedWallet}
-            onConnectDemo={connectDemoWallet}
-            onDisconnect={disconnectWallet}
-          />
-        </section>
+      {!session ? (
+        <div className="absolute inset-0 z-20 grid place-items-center bg-background/70 p-4 backdrop-blur-sm">
+          <div className="panel w-full max-w-sm">
+            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              MagicBlock Blitz
+            </p>
+            <h1 className="font-display mt-1 text-2xl font-semibold text-primary">
+              Join The Raid
+            </h1>
 
-        <AnalyticsPanel
-          snapshot={snapshot}
-          analytics={analytics}
-          lastDecision={lastDecision}
-          adaptationCount={adaptationCount}
-          strategyError={strategyError}
-        />
+            {!wallet ? (
+              <div className="mt-4 grid gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={connectInjectedWallet}
+                    disabled={walletStatus === "connecting"}
+                    aria-busy={walletStatus === "connecting"}
+                    className="min-h-10 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {walletStatus === "connecting" ? "Connecting..." : "Connect Wallet"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={connectDemoWallet}
+                    className="min-h-10 rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    Demo Wallet
+                  </button>
+                </div>
+                {walletError ? (
+                  <p className="text-xs font-medium text-destructive">{walletError}</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                  <span className="truncate font-mono text-xs">
+                    {truncateAddress(wallet.address)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={disconnectWallet}
+                  className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
 
-        <AuthorityPanel authority={authorityStatus} />
-
-        <SettlementPanel
-          snapshot={snapshot}
-          settlement={settlementStatus}
-          busy={settlementBusy}
-          walletsReady={walletsReady}
-          canSubmit={canSubmitSettlement}
-          onSubmit={submitSettlement}
-        />
-
-        <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">Room</h2>
-            {roomStatus !== "idle" ? (
-              <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium capitalize text-muted-foreground">
-                {roomStatus}
-              </span>
-            ) : null}
-          </div>
-
-          <div className="mt-4 grid gap-3">
-            <label className="grid gap-1.5 text-sm font-medium">
+            <label className="mt-4 grid gap-1.5 text-sm font-medium">
               <span>Display Name</span>
               <input
                 type="text"
@@ -775,7 +824,7 @@ export function RaidRoom() {
               />
             </label>
 
-            <fieldset className="grid gap-2">
+            <fieldset className="mt-3 grid gap-2">
               <legend className="text-sm font-medium">Class</legend>
               <div className="grid grid-cols-3 gap-2">
                 {PLAYER_CLASSES.map((candidate) => (
@@ -784,19 +833,24 @@ export function RaidRoom() {
                     type="button"
                     aria-pressed={playerClass === candidate}
                     onClick={() => setPlayerClass(candidate)}
-                    className={`min-h-10 rounded-md border px-2 text-sm font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                    className={`grid min-h-10 justify-items-center gap-1 rounded-md border px-2 py-2 text-xs font-medium capitalize transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                       playerClass === candidate
-                        ? "border-primary bg-primary text-primary-foreground"
+                        ? "border-primary bg-primary/15 text-foreground"
                         : "border-border bg-background text-foreground hover:bg-muted"
                     }`}
                   >
+                    <span
+                      className="pixel-art h-10 w-10 bg-contain bg-center bg-no-repeat"
+                      style={{ backgroundImage: `url(${CLASS_PORTRAIT[candidate]})` }}
+                      aria-hidden
+                    />
                     {candidate}
                   </button>
                 ))}
               </div>
             </fieldset>
 
-            <form onSubmit={createRoom}>
+            <form onSubmit={createRoom} className="mt-4">
               <button
                 type="submit"
                 disabled={roomStatus === "creating" || roomFormDisabled}
@@ -807,22 +861,26 @@ export function RaidRoom() {
               </button>
             </form>
 
-            <form onSubmit={joinRoom} className="grid gap-2">
-              <label className="grid gap-1.5 text-sm font-medium">
-                <span>Room Code</span>
-                <input
-                  type="text"
-                  inputMode="text"
-                  autoComplete="one-time-code"
-                  spellCheck={false}
-                  value={joinCode}
-                  onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-                  aria-invalid={formError ? "true" : undefined}
-                  aria-describedby={formError ? "room-error" : undefined}
-                  maxLength={8}
-                  className="min-h-10 rounded-md border border-border bg-background px-3 font-mono text-sm uppercase tracking-normal focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                />
-              </label>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs uppercase tracking-widest text-muted-foreground">or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <form onSubmit={joinRoom} className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+              <input
+                type="text"
+                inputMode="text"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                value={joinCode}
+                onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                placeholder="Room code"
+                aria-invalid={formError ? "true" : undefined}
+                aria-describedby={formError ? "room-error" : undefined}
+                maxLength={8}
+                className="min-h-10 min-w-0 rounded-md border border-border bg-background px-3 font-mono text-sm uppercase tracking-normal focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
               <button
                 type="submit"
                 disabled={
@@ -833,82 +891,80 @@ export function RaidRoom() {
                 aria-busy={roomStatus === "joining"}
                 className="min-h-10 rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
               >
-                {roomStatus === "joining" ? "Joining..." : "Join Room"}
+                {roomStatus === "joining" ? "Joining..." : "Join"}
               </button>
             </form>
 
             {formError ? (
-              <p id="room-error" className="text-sm font-medium text-destructive">
+              <p id="room-error" className="mt-3 text-xs font-medium text-destructive">
                 {formError}
               </p>
             ) : null}
           </div>
-        </section>
+        </div>
+      ) : null}
 
-        {session ? (
-          <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold">Raid {session.roomCode}</h2>
-                <p className="mt-1 font-mono text-xs text-muted-foreground">
-                  {session.playerId}
+      {session && terminalRaid ? (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-background/80 p-4 backdrop-blur-sm">
+          <div className="panel w-full max-w-sm text-center">
+            <div className="flex items-center justify-center gap-3">
+              <BossPortrait phase={snapshot?.boss.phase ?? "phase_1"} />
+              <div className="text-left">
+                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Raid Over
                 </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={copyRoomCode}
-                  className="min-h-10 rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  {copiedRoom ? "Copied" : "Copy"}
-                </button>
-                <button
-                  type="button"
-                  onClick={leaveRoom}
-                  className="min-h-10 rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  Leave
-                </button>
+                <h2 className="font-display text-2xl font-semibold text-primary">
+                  {resultLabel}
+                </h2>
               </div>
             </div>
 
-            {syncError ? (
-              <div className="mt-3 rounded-md border border-border bg-background p-3">
-                <p className="text-sm font-medium text-destructive">
-                  {syncError}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setRoomStatus("reconnecting")}
-                  className="mt-2 min-h-10 rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  Retry
-                </button>
-              </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              You dealt <span className="font-semibold text-foreground">{localDamage}</span>{" "}
+              damage.
+            </p>
+
+            <button
+              type="button"
+              onClick={submitSettlement}
+              disabled={!canSubmitSettlement}
+              aria-busy={settlementBusy}
+              className="mt-4 min-h-10 w-full rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              {settlementBusy ? "Submitting..." : settlementDisabledReason ?? "Submit Settlement"}
+            </button>
+
+            {settlementStatus?.transactionSignature ? (
+              <a
+                href={settlementStatus.explorerUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 grid min-h-10 place-items-center rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                View On Explorer
+              </a>
             ) : null}
 
-            <div className="mt-4 grid gap-2">
-              {snapshot?.players.map((player) => (
-                <div
-                  key={player.id}
-                  className="grid min-h-12 grid-cols-[1fr_auto] items-center gap-3 rounded-md border border-border px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{player.displayName}</p>
-                    <p className="text-xs capitalize text-muted-foreground">{player.class}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-xs tabular-nums">{player.hp} HP</p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {player.wallet ? truncateAddress(player.wallet) : "No wallet"}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </aside>
+            {settlementStatus?.message ? (
+              <p
+                className={`mt-3 break-words text-xs font-medium ${
+                  settlementStatus.status === "failed" ? "text-destructive" : "text-muted-foreground"
+                }`}
+              >
+                {settlementStatus.message}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={leaveRoom}
+              className="mt-3 min-h-10 w-full rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -916,363 +972,23 @@ export function RaidRoom() {
 function RaidRoomShell() {
   return (
     <div
-      className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]"
+      className="relative h-screen w-screen overflow-hidden bg-background"
       aria-busy="true"
       aria-live="polite"
     >
-      <section className="grid gap-3">
-        <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-background">
-          <div className="absolute inset-0 grid place-items-center bg-background/75 p-4 text-center">
-            <p className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-card-foreground">
-              Loading raid room.
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-md border border-border bg-card p-3 text-card-foreground">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.4fr]">
-            <HudBar label="Boss" value={GAME_LIMITS.boss.maxHp} max={GAME_LIMITS.boss.maxHp} />
-            <HudBar
-              label="Raider"
-              value={GAME_LIMITS.player.maxHp}
-              max={GAME_LIMITS.player.maxHp}
-            />
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <HudStat label="Phase" value="phase 1" />
-              <HudStat label="Status" value="loading" />
-              <HudStat label="Damage" value="0" />
-              <HudStat label="Tick" value="0" />
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled
-              className="min-h-10 rounded-md border border-border bg-card px-3 text-sm font-medium text-card-foreground opacity-55"
-            >
-              Strike
-            </button>
-            <button
-              type="button"
-              disabled
-              className="min-h-10 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground opacity-55"
-            >
-              Special
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <aside className="grid content-start gap-3">
-        {["Wallet", "AI Strategy", "Authority", "Settlement", "Room"].map((label) => (
-          <section
-            key={label}
-            className="rounded-md border border-border bg-card p-4 text-card-foreground"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold">{label}</h2>
-              <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-                Loading
-              </span>
-            </div>
-          </section>
-        ))}
-      </aside>
-    </div>
-  );
-}
-
-function AnalyticsPanel({
-  snapshot,
-  analytics,
-  lastDecision,
-  adaptationCount,
-  strategyError
-}: {
-  snapshot: RaidSnapshot | null;
-  analytics: RaidAnalyticsSummary | null;
-  lastDecision: BossStrategyDecision | null;
-  adaptationCount: number;
-  strategyError: string | null;
-}) {
-  const clusterScore = analytics ? `${Math.round(analytics.clusterScore * 100)}%` : "--";
-  const healingFrequency = analytics
-    ? analytics.signals.frequentHealing
-      ? "frequent"
-      : `${analytics.healingEvents}/${analytics.windowSeconds}s`
-    : "--";
-  const decisionLabel = lastDecision
-    ? `${formatLabel(lastDecision.strategy)} (${formatDecisionSource(lastDecision.source)})`
-    : "--";
-
-  return (
-    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">AI Strategy</h2>
-        <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-          {adaptationCount}/{GAME_LIMITS.ai.maxStrategyAdaptations}
-        </span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        <HudStat label="Cluster" value={clusterScore} />
-        <HudStat label="Damage Type" value={formatNullableLabel(analytics?.dominantDamageType)} />
-        <HudStat label="Class" value={formatNullableLabel(analytics?.dominantClass)} />
-        <HudStat label="Healing" value={healingFrequency} />
-        <HudStat label="Phase" value={formatLabel(snapshot?.boss.phase ?? analytics?.bossPhase)} />
-        <HudStat
-          label="Strategy"
-          value={formatLabel(snapshot?.boss.strategy ?? analytics?.currentStrategy)}
-        />
-      </div>
-
-      <div className="mt-3 rounded-md border border-border p-3">
-        <p className="text-xs font-medium text-muted-foreground">Last Decision</p>
-        <p className="mt-1 break-words text-sm font-semibold">{decisionLabel}</p>
-        {lastDecision ? (
-          <p className="mt-2 break-words text-xs text-muted-foreground">
-            {lastDecision.reason}
-          </p>
-        ) : (
-          <p className="mt-2 text-xs text-muted-foreground">Waiting for raid telemetry.</p>
-        )}
-      </div>
-
-      {strategyError ? (
-        <p className="mt-3 text-sm font-medium text-destructive">{strategyError}</p>
-      ) : null}
-    </section>
-  );
-}
-
-function AuthorityPanel({ authority }: { authority: RoomAuthorityStatus | null }) {
-  const mode = authority?.mode === "magicblock_live" ? "MagicBlock live" : "Local fallback";
-  const combat = authority?.combatAuthority === "magicblock_router" ? "Router" : "Room server";
-
-  return (
-    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Authority</h2>
-        <span
-          className={`rounded-sm px-2 py-1 text-xs font-medium ${
-            authority?.mode === "magicblock_live"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {mode}
-        </span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        <HudStat label="Movement" value="Room server" />
-        <HudStat label="Combat" value={combat} />
-      </div>
-
-      <div className="mt-3 rounded-md border border-border p-3">
-        <p className="text-xs font-medium text-muted-foreground">RaidState</p>
-        <p className="mt-1 break-all font-mono text-xs">
-          {authority?.raidStatePda ?? "--"}
-        </p>
-        {authority?.lastSignature ? (
-          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
-            {truncateAddress(authority.lastSignature, 6)}
-          </p>
-        ) : null}
-      </div>
-
-      {authority?.lastError ? (
-        <p className="mt-3 break-words text-sm font-medium text-destructive">
-          {authority.lastError}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-function SettlementPanel({
-  snapshot,
-  settlement,
-  busy,
-  walletsReady,
-  canSubmit,
-  onSubmit
-}: {
-  snapshot: RaidSnapshot | null;
-  settlement: RoomSettlementStatus | null;
-  busy: boolean;
-  walletsReady: boolean;
-  canSubmit: boolean;
-  onSubmit: () => void;
-}) {
-  const terminal =
-    snapshot?.status === "victory" ||
-    snapshot?.status === "defeat" ||
-    snapshot?.status === "timeout" ||
-    snapshot?.status === "settled";
-  const status = settlement?.status ?? (snapshot?.status === "settled" ? "success" : "idle");
-  const statusLabel = formatLabel(status);
-  const disabledReason = !terminal
-    ? "Raid active"
-    : !walletsReady
-      ? "Wallets missing"
-      : snapshot?.status === "settled"
-        ? "Settled"
-        : null;
-
-  return (
-    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Settlement</h2>
-        <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium capitalize text-muted-foreground">
-          {statusLabel}
-        </span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        <HudStat label="Result" value={formatLabel(settlement?.summary?.result ?? snapshot?.status)} />
-        <HudStat
-          label="Duration"
-          value={`${settlement?.summary?.durationSeconds ?? snapshot?.elapsedSeconds ?? 0}s`}
-        />
-        <HudStat
-          label="Boss HP"
-          value={(settlement?.summary?.bossFinalHp ?? snapshot?.boss.hp ?? 0).toString()}
-        />
-        <HudStat
-          label="Players"
-          value={(settlement?.summary?.contributions.length ?? snapshot?.players.length ?? 0).toString()}
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!canSubmit}
-        aria-busy={busy}
-        className="mt-3 min-h-10 w-full rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
-      >
-        {busy ? "Submitting..." : disabledReason ?? "Submit Settlement"}
-      </button>
-
-      {settlement?.transactionSignature ? (
-        <a
-          href={settlement.explorerUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 grid min-h-10 place-items-center rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          Explorer
-        </a>
-      ) : null}
-
-      {settlement?.settlementRecordPda ? (
-        <div className="mt-3 rounded-md border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground">Record</p>
-          <p className="mt-1 break-all font-mono text-xs">{settlement.settlementRecordPda}</p>
-        </div>
-      ) : null}
-
-      {settlement?.message ? (
-        <p
-          className={`mt-3 break-words text-sm font-medium ${
-            settlement.status === "failed" ? "text-destructive" : "text-muted-foreground"
-          }`}
-        >
-          {settlement.message}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-function WalletControls({
-  wallet,
-  walletStatus,
-  walletError,
-  onConnectInjected,
-  onConnectDemo,
-  onDisconnect
-}: {
-  wallet: WalletState | null;
-  walletStatus: WalletStatus;
-  walletError: string | null;
-  onConnectInjected: () => void;
-  onConnectDemo: () => void;
-  onDisconnect: () => void;
-}) {
-  if (wallet) {
-    const explorerUrl = `https://explorer.solana.com/address/${wallet.address}?cluster=devnet`;
-
-    return (
-      <div className="mt-4 grid gap-3">
-        <div className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-border px-3">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-primary" aria-hidden />
-            <span className="truncate font-mono text-sm">{truncateAddress(wallet.address)}</span>
-          </span>
-          <span className="text-xs capitalize text-muted-foreground">{wallet.source}</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => void navigator.clipboard.writeText(wallet.address)}
-            className="min-h-10 rounded-md border border-border px-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Copy
-          </button>
-          <a
-            href={explorerUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="grid min-h-10 place-items-center rounded-md border border-border px-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Explorer
-          </a>
-          <button
-            type="button"
-            onClick={onDisconnect}
-            className="min-h-10 rounded-md border border-border px-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Disconnect
-          </button>
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="panel px-4 py-3 text-sm font-medium text-muted-foreground">
+          Loading raid room.
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="mt-4 grid gap-3">
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={onConnectInjected}
-          disabled={walletStatus === "connecting"}
-          aria-busy={walletStatus === "connecting"}
-          className="min-h-10 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
-        >
-          {walletStatus === "connecting" ? "Connecting..." : "Connect"}
-        </button>
-        <button
-          type="button"
-          onClick={onConnectDemo}
-          className="min-h-10 rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          Demo Wallet
-        </button>
-      </div>
-      {walletError ? (
-        <p className="text-sm font-medium text-destructive">{walletError}</p>
-      ) : (
-        <p className="text-sm text-muted-foreground">Wallet anchors the live devnet roster.</p>
-      )}
     </div>
   );
 }
 
 function HudBar({ label, value, max }: { label: string; value: number; max: number }) {
   const percent = max === 0 ? 0 : Math.round((value / max) * 100);
+  const barColor =
+    percent <= 25 ? "bg-destructive" : percent <= 55 ? "bg-primary" : "bg-emerald-500";
 
   return (
     <div>
@@ -1282,19 +998,37 @@ function HudBar({ label, value, max }: { label: string; value: number; max: numb
           {value}/{max}
         </span>
       </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-sm bg-muted">
-        <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+      <div className="mt-1 h-2.5 overflow-hidden rounded-sm border border-border/60 bg-muted">
+        <div
+          className={`h-full transition-[width] duration-500 ease-out ${barColor}`}
+          style={{ width: `${percent}%` }}
+        />
       </div>
     </div>
   );
 }
 
-function HudStat({ label, value }: { label: string; value: string }) {
+const BOSS_PORTRAIT_SIZE = 48;
+
+function BossPortrait({ phase }: { phase: BossPhase }) {
+  const tier = BOSS_TIER_BY_PHASE[phase];
+  // Idle sheets are a 4x4 grid (4 directions x 4 frames); scale the whole sheet
+  // so one native 64px frame maps exactly to BOSS_PORTRAIT_SIZE, then crop to
+  // the top-left (front-facing, frame 0) cell via background-position.
+  const sheetSize = BOSS_PORTRAIT_SIZE * 4;
+
   return (
-    <div className="rounded-md border border-border p-2">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold capitalize">{value}</p>
-    </div>
+    <span
+      className="pixel-art shrink-0 overflow-hidden rounded-md border border-border bg-background/60"
+      style={{
+        width: BOSS_PORTRAIT_SIZE,
+        height: BOSS_PORTRAIT_SIZE,
+        backgroundImage: `url(${orcSheetPath(tier, "idle")})`,
+        backgroundPosition: "0 0",
+        backgroundSize: `${sheetSize}px ${sheetSize}px`
+      }}
+      aria-hidden
+    />
   );
 }
 
@@ -1330,16 +1064,8 @@ function truncateAddress(address: string, chars = 4) {
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
 }
 
-function formatNullableLabel(value: string | null | undefined) {
-  return value ? formatLabel(value) : "mixed";
-}
-
 function formatLabel(value: string | null | undefined) {
   return value ? value.replaceAll("_", " ") : "--";
-}
-
-function formatDecisionSource(source: BossStrategyDecision["source"]) {
-  return source === "llm" ? "OpenAI" : "fallback";
 }
 
 function truncateMessage(message: string, maxLength = 180) {

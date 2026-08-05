@@ -38,7 +38,7 @@ describe("GAME-004 boss phases and attacks", () => {
 
     expect(chooseBossAttack(areaDenial, 2_000)).toBe("ground_slam");
     expect(chooseBossAttack(magicResistance, 2_000)).toBe("arcane_shield");
-    expect(BOSS_ATTACK_DEFINITIONS.ground_slam.damage).toBe(34);
+    expect(BOSS_ATTACK_DEFINITIONS.ground_slam.damage).toBe(17);
     expect(BOSS_ATTACK_DEFINITIONS.arcane_shield.damage).toBe(0);
   });
 

@@ -10,6 +10,27 @@ import {
   type RaidSnapshot
 } from "@/game/schemas";
 import { createLocalRaidSnapshot } from "@/game/rules";
+import {
+  ARENA_PROP_PATHS,
+  BOSS_TIER_BY_PHASE,
+  CLASS_HERO,
+  FACING_ROW,
+  HERO_ANIMATIONS,
+  ORC_ANIMATIONS,
+  ORC_FRAME_SIZE,
+  ORC_ROWS,
+  heroAnimKey,
+  heroFramePath,
+  heroFrameTextureKey,
+  orcAnimKey,
+  orcSheetPath,
+  orcTextureKey,
+  type FacingRow,
+  type HeroAnimKey,
+  type HeroId,
+  type OrcAnimKey,
+  type OrcTier
+} from "@/game/sprites";
 
 type ArenaStatus = "loading" | "ready" | "error";
 
@@ -24,6 +45,25 @@ type PhaserArenaProps = {
 const SNAPSHOT_EVENT = "magicraid:snapshot";
 const SEND_MOVE_EVERY_MS = 90;
 const INTERPOLATION_ALPHA = 0.22;
+const MOVEMENT_EPSILON = 0.4;
+const BOSS_SCALE = 2.2;
+const PLAYER_SCALE = 0.6;
+const LOCAL_PLAYER_SCALE = 0.68;
+const HEROES: HeroId[] = ["knight", "mage", "rogue"];
+const HERO_ANIM_KEYS: HeroAnimKey[] = ["idle", "walk", "attack", "hurt", "death"];
+const ORC_TIERS: OrcTier[] = ["orc1", "orc2", "orc3"];
+const ORC_ANIM_KEYS: OrcAnimKey[] = ["idle", "walk", "run", "attack", "hurt", "death"];
+const ARENA_PROP_POSITIONS: Position[] = [
+  { x: 60, y: 60 },
+  { x: 1220, y: 60 },
+  { x: 60, y: 660 },
+  { x: 1220, y: 660 },
+  { x: 640, y: 35 },
+  { x: 640, y: 685 },
+  { x: 35, y: 360 },
+  { x: 1245, y: 360 },
+  { x: 150, y: 600 }
+];
 const STRATEGY_VISUALS = {
   area_denial: {
     color: 0xf97316
@@ -105,7 +145,17 @@ export function PhaserArena({
         }
 
         class RaidArenaScene extends Phaser.Scene {
-          private graphics?: Phaser.GameObjects.Graphics;
+          private floorGraphics?: Phaser.GameObjects.Graphics;
+          private fxGraphics?: Phaser.GameObjects.Graphics;
+          private bossSprite?: Phaser.GameObjects.Sprite;
+          private playerSprites = new Map<string, Phaser.GameObjects.Sprite>();
+          private bossFacingRow: FacingRow = FACING_ROW.down;
+          private bossLastAttackId: string | null = null;
+          private bossLastHp: number = GAME_LIMITS.boss.maxHp;
+          private previousBossPosition?: Position;
+          private previousPlayerPositions = new Map<string, Position>();
+          private playerLastAttackId = new Map<string, string>();
+          private playerLastHp = new Map<string, number>();
           private keys?: {
             up: Phaser.Input.Keyboard.Key;
             down: Phaser.Input.Keyboard.Key;
@@ -133,8 +183,50 @@ export function PhaserArena({
             super("raid-arena");
           }
 
+          preload() {
+            for (const hero of HEROES) {
+              for (const anim of HERO_ANIM_KEYS) {
+                const config = HERO_ANIMATIONS[hero][anim];
+                for (const frame of config.frames) {
+                  this.load.image(
+                    heroFrameTextureKey(hero, anim, frame),
+                    heroFramePath(hero, anim, frame)
+                  );
+                }
+              }
+            }
+
+            for (const tier of ORC_TIERS) {
+              for (const anim of ORC_ANIM_KEYS) {
+                this.load.spritesheet(orcTextureKey(tier, anim), orcSheetPath(tier, anim), {
+                  frameWidth: ORC_FRAME_SIZE,
+                  frameHeight: ORC_FRAME_SIZE
+                });
+              }
+            }
+
+            ARENA_PROP_PATHS.forEach((path, index) => {
+              this.load.image(`prop-${index}`, path);
+            });
+          }
+
           create() {
-            this.graphics = this.add.graphics();
+            this.floorGraphics = this.add.graphics().setDepth(-1000);
+            this.fxGraphics = this.add.graphics().setDepth(1000);
+            this.buildAnimations();
+            this.spawnProps();
+
+            const boss = this.renderSnapshot.boss;
+            const bossTier = BOSS_TIER_BY_PHASE[boss.phase];
+            this.bossSprite = this.add
+              .sprite(boss.position.x, boss.position.y, orcTextureKey(bossTier, "idle"))
+              .setScale(BOSS_SCALE);
+            this.bossLastHp = boss.hp;
+
+            for (const player of this.renderSnapshot.players) {
+              this.createPlayerSprite(player);
+            }
+
             const keyboard = this.input.keyboard;
 
             if (!keyboard) {
@@ -190,7 +282,7 @@ export function PhaserArena({
           }
 
           update(time: number) {
-            if (!this.graphics || !this.keys) {
+            if (!this.floorGraphics || !this.fxGraphics || !this.keys) {
               return;
             }
 
@@ -240,26 +332,262 @@ export function PhaserArena({
             });
           }
 
-          private draw() {
-            if (!this.graphics) {
-              return;
-            }
+          private buildAnimations() {
+            for (const hero of HEROES) {
+              for (const anim of HERO_ANIM_KEYS) {
+                const key = heroAnimKey(hero, anim);
+                if (this.anims.exists(key)) {
+                  continue;
+                }
 
-            const graphics = this.graphics;
-            const snapshotToDraw = this.renderSnapshot;
-            graphics.clear();
-            drawArena(graphics, snapshotToDraw);
-
-            for (const attack of snapshotToDraw.attacks) {
-              if (attack.expiresAtMs >= snapshotToDraw.serverTimeMs) {
-                drawAttack(graphics, attack, snapshotToDraw);
+                const config = HERO_ANIMATIONS[hero][anim];
+                this.anims.create({
+                  key,
+                  frames: config.frames.map((frame) => ({
+                    key: heroFrameTextureKey(hero, anim, frame)
+                  })),
+                  frameRate: config.frameRate,
+                  repeat: config.repeat
+                });
               }
             }
 
-            drawBoss(graphics, snapshotToDraw);
-            for (const player of snapshotToDraw.players) {
-              drawPlayer(graphics, player, player.id === this.sceneLocalPlayerId);
+            for (const tier of ORC_TIERS) {
+              for (const anim of ORC_ANIM_KEYS) {
+                const textureKey = orcTextureKey(tier, anim);
+                const texture = this.textures.get(textureKey);
+                const cols = Math.round(texture.source[0].width / ORC_FRAME_SIZE);
+                const { frameRate, repeat } = ORC_ANIMATIONS[anim];
+
+                for (let row = 0; row < ORC_ROWS; row += 1) {
+                  const key = `${orcAnimKey(tier, anim)}-row${row}`;
+                  if (this.anims.exists(key)) {
+                    continue;
+                  }
+
+                  const start = row * cols;
+                  this.anims.create({
+                    key,
+                    frames: this.anims.generateFrameNumbers(textureKey, {
+                      start,
+                      end: start + cols - 1
+                    }),
+                    frameRate,
+                    repeat
+                  });
+                }
+              }
             }
+          }
+
+          private spawnProps() {
+            ARENA_PROP_PATHS.forEach((_, index) => {
+              const position = ARENA_PROP_POSITIONS[index % ARENA_PROP_POSITIONS.length];
+              this.add.image(position.x, position.y, `prop-${index}`).setDepth(-500).setAlpha(0.92);
+            });
+          }
+
+          private createPlayerSprite(player: RaidSnapshot["players"][number]) {
+            const hero = CLASS_HERO[player.class];
+            const idleFrames = HERO_ANIMATIONS[hero].idle.frames;
+            const sprite = this.add.sprite(
+              player.position.x,
+              player.position.y,
+              heroFrameTextureKey(hero, "idle", idleFrames[0])
+            );
+            sprite.setScale(
+              player.id === this.sceneLocalPlayerId ? LOCAL_PLAYER_SCALE : PLAYER_SCALE
+            );
+            this.playerSprites.set(player.id, sprite);
+            this.playerLastHp.set(player.id, player.hp);
+            return sprite;
+          }
+
+          private draw() {
+            if (!this.floorGraphics || !this.fxGraphics) {
+              return;
+            }
+
+            const snapshotToDraw = this.renderSnapshot;
+
+            this.floorGraphics.clear();
+            drawArena(this.floorGraphics, snapshotToDraw);
+
+            this.syncBossSprite(snapshotToDraw);
+            this.syncPlayerSprites(snapshotToDraw);
+
+            this.fxGraphics.clear();
+            for (const attack of snapshotToDraw.attacks) {
+              if (attack.expiresAtMs >= snapshotToDraw.serverTimeMs) {
+                drawAttack(this.fxGraphics, attack, snapshotToDraw);
+              }
+            }
+
+            drawCanvasHpBar(
+              this.fxGraphics,
+              snapshotToDraw.boss.position.x - 96,
+              snapshotToDraw.boss.position.y - 98,
+              192,
+              12,
+              snapshotToDraw.boss.hp,
+              snapshotToDraw.boss.maxHp,
+              0xef4444
+            );
+
+            for (const player of snapshotToDraw.players) {
+              drawCanvasHpBar(
+                this.fxGraphics,
+                player.position.x - 30,
+                player.position.y - 52,
+                60,
+                8,
+                player.hp,
+                player.maxHp,
+                0x22c55e
+              );
+            }
+
+            if (this.sceneLocalPlayerId) {
+              const localPlayer = snapshotToDraw.players.find(
+                (player) => player.id === this.sceneLocalPlayerId
+              );
+              if (localPlayer) {
+                this.fxGraphics.fillStyle(0xe2a542, 0.95);
+                this.fxGraphics.fillTriangle(
+                  localPlayer.position.x - 8,
+                  localPlayer.position.y - 68,
+                  localPlayer.position.x + 8,
+                  localPlayer.position.y - 68,
+                  localPlayer.position.x,
+                  localPlayer.position.y - 54
+                );
+              }
+            }
+          }
+
+          private syncBossSprite(snapshot: RaidSnapshot) {
+            if (!this.bossSprite) {
+              return;
+            }
+
+            const boss = snapshot.boss;
+            const tier = BOSS_TIER_BY_PHASE[boss.phase];
+            this.bossSprite.setPosition(boss.position.x, boss.position.y);
+            this.bossSprite.setDepth(boss.position.y);
+
+            const previous = this.previousBossPosition;
+            const dx = previous ? boss.position.x - previous.x : 0;
+            const dy = previous ? boss.position.y - previous.y : 0;
+            const moving = Math.hypot(dx, dy) > MOVEMENT_EPSILON;
+            this.previousBossPosition = { x: boss.position.x, y: boss.position.y };
+
+            if (moving) {
+              this.bossFacingRow =
+                Math.abs(dx) > Math.abs(dy)
+                  ? dx < 0
+                    ? FACING_ROW.left
+                    : FACING_ROW.right
+                  : dy < 0
+                    ? FACING_ROW.up
+                    : FACING_ROW.down;
+            }
+
+            const rowKey = (anim: OrcAnimKey) =>
+              `${orcAnimKey(tier, anim)}-row${this.bossFacingRow}`;
+
+            if (boss.hp <= 0) {
+              this.bossSprite.play(rowKey("death"), true);
+              return;
+            }
+
+            if (this.bossSprite.getData("busy")) {
+              return;
+            }
+
+            const latestAttack = latestAttackFor(snapshot, boss.id, "boss");
+            if (latestAttack && latestAttack.id !== this.bossLastAttackId) {
+              this.bossLastAttackId = latestAttack.id;
+              this.playOneShot(this.bossSprite, rowKey("attack"));
+              return;
+            }
+
+            if (boss.hp < this.bossLastHp) {
+              this.bossLastHp = boss.hp;
+              this.playOneShot(this.bossSprite, rowKey("hurt"));
+              return;
+            }
+            this.bossLastHp = boss.hp;
+
+            this.bossSprite.play(rowKey(moving ? "walk" : "idle"), true);
+          }
+
+          private syncPlayerSprites(snapshot: RaidSnapshot) {
+            const seen = new Set<string>();
+
+            for (const player of snapshot.players) {
+              seen.add(player.id);
+              const sprite = this.playerSprites.get(player.id) ?? this.createPlayerSprite(player);
+              const hero = CLASS_HERO[player.class];
+
+              const previous = this.previousPlayerPositions.get(player.id);
+              const dx = previous ? player.position.x - previous.x : 0;
+              const dy = previous ? player.position.y - previous.y : 0;
+              const moving = Math.hypot(dx, dy) > MOVEMENT_EPSILON;
+              this.previousPlayerPositions.set(player.id, {
+                x: player.position.x,
+                y: player.position.y
+              });
+
+              sprite.setPosition(player.position.x, player.position.y);
+              sprite.setDepth(player.position.y);
+              sprite.setFlipX(Math.cos(player.facingRadians) < 0);
+              sprite.setAlpha(player.status === "alive" ? 1 : 0.75);
+
+              if (player.status !== "alive") {
+                sprite.play(heroAnimKey(hero, "death"), true);
+                continue;
+              }
+
+              if (sprite.getData("busy")) {
+                continue;
+              }
+
+              const latestAttack = latestAttackFor(snapshot, player.id, "player");
+              const lastAttackId = this.playerLastAttackId.get(player.id);
+              if (latestAttack && latestAttack.id !== lastAttackId) {
+                this.playerLastAttackId.set(player.id, latestAttack.id);
+                this.playOneShot(sprite, heroAnimKey(hero, "attack"));
+                continue;
+              }
+
+              const lastHp = this.playerLastHp.get(player.id) ?? player.hp;
+              if (player.hp < lastHp) {
+                this.playerLastHp.set(player.id, player.hp);
+                this.playOneShot(sprite, heroAnimKey(hero, "hurt"));
+                continue;
+              }
+              this.playerLastHp.set(player.id, player.hp);
+
+              sprite.play(heroAnimKey(hero, moving ? "walk" : "idle"), true);
+            }
+
+            for (const [id, sprite] of this.playerSprites) {
+              if (!seen.has(id)) {
+                sprite.destroy();
+                this.playerSprites.delete(id);
+                this.playerLastAttackId.delete(id);
+                this.playerLastHp.delete(id);
+                this.previousPlayerPositions.delete(id);
+              }
+            }
+          }
+
+          private playOneShot(sprite: Phaser.GameObjects.Sprite, key: string) {
+            sprite.play(key, true);
+            sprite.setData("busy", true);
+            sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+              sprite.setData("busy", false);
+            });
           }
         }
 
@@ -268,7 +596,8 @@ export function PhaserArena({
           parent: containerRef.current,
           width: GAME_LIMITS.arena.width,
           height: GAME_LIMITS.arena.height,
-          backgroundColor: "#07111f",
+          backgroundColor: "#120d16",
+          pixelArt: true,
           scale: {
             mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH
@@ -293,7 +622,7 @@ export function PhaserArena({
   }, [retryNonce]);
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-background">
+    <div className="absolute inset-0 overflow-hidden bg-background">
       <div ref={containerRef} className="magicraid-arena absolute inset-0" />
       {status === "loading" ? (
         <div className="absolute inset-0 grid place-items-center bg-background/90">
@@ -312,13 +641,6 @@ export function PhaserArena({
               Retry
             </button>
           </div>
-        </div>
-      ) : null}
-      {!snapshot ? (
-        <div className="absolute inset-0 grid place-items-center bg-background/75 p-4 text-center">
-          <p className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-card-foreground">
-            Create or join a room.
-          </p>
         </div>
       ) : null}
     </div>
@@ -362,21 +684,55 @@ function lerpPosition(current: Position, target: Position): Position {
   };
 }
 
+function latestAttackFor(
+  snapshot: RaidSnapshot,
+  sourceId: string,
+  source: "player" | "boss"
+): RaidSnapshot["attacks"][number] | undefined {
+  let latest: RaidSnapshot["attacks"][number] | undefined;
+
+  for (const attack of snapshot.attacks) {
+    if (attack.source !== source || attack.sourceId !== sourceId) {
+      continue;
+    }
+
+    if (!latest || attack.startedAtMs > latest.startedAtMs) {
+      latest = attack;
+    }
+  }
+
+  return latest;
+}
+
 function drawArena(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot) {
-  graphics.fillStyle(0x07111f, 1);
-  graphics.fillRect(0, 0, GAME_LIMITS.arena.width, GAME_LIMITS.arena.height);
-  graphics.lineStyle(1, 0x24364f, 0.42);
+  const { width, height } = GAME_LIMITS.arena;
 
-  for (let x = 80; x < GAME_LIMITS.arena.width; x += 80) {
-    graphics.lineBetween(x, 0, x, GAME_LIMITS.arena.height);
+  graphics.fillStyle(0x120d16, 1);
+  graphics.fillRect(0, 0, width, height);
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const glowSteps = 6;
+  for (let step = glowSteps; step > 0; step -= 1) {
+    const radius = (Math.max(width, height) * 0.55 * step) / glowSteps;
+    graphics.fillStyle(0x3a2410, 0.06);
+    graphics.fillCircle(centerX, centerY, radius);
   }
 
-  for (let y = 80; y < GAME_LIMITS.arena.height; y += 80) {
-    graphics.lineBetween(0, y, GAME_LIMITS.arena.width, y);
+  graphics.lineStyle(1, 0x3a2c22, 0.22);
+  for (let x = 80; x < width; x += 80) {
+    graphics.lineBetween(x, 0, x, height);
   }
 
-  graphics.lineStyle(3, 0x6ee7d8, 0.5);
-  graphics.strokeRect(18, 18, GAME_LIMITS.arena.width - 36, GAME_LIMITS.arena.height - 36);
+  for (let y = 80; y < height; y += 80) {
+    graphics.lineBetween(0, y, width, y);
+  }
+
+  graphics.lineStyle(4, 0xd9a441, 0.55);
+  graphics.strokeRect(18, 18, width - 36, height - 36);
+  graphics.lineStyle(1, 0xd9a441, 0.28);
+  graphics.strokeRect(26, 26, width - 52, height - 52);
+
   drawStrategyTell(graphics, snapshot);
 }
 
@@ -480,97 +836,6 @@ function drawAttack(
   graphics.fillCircle(attack.origin.x, attack.origin.y, attack.radius);
   graphics.lineStyle(3, color, 0.7);
   graphics.strokeCircle(attack.origin.x, attack.origin.y, attack.radius);
-}
-
-function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot) {
-  const { boss } = snapshot;
-  const phaseColor =
-    boss.phase === "phase_3" ? 0xef4444 : boss.phase === "phase_2" ? 0xf59e0b : 0x8b5cf6;
-  const strategyColor = STRATEGY_VISUALS[boss.strategy].color;
-
-  graphics.fillStyle(strategyColor, 0.12);
-  graphics.fillCircle(boss.position.x, boss.position.y, 86);
-  graphics.lineStyle(4, strategyColor, 0.68);
-  graphics.strokeCircle(boss.position.x, boss.position.y, 72);
-  graphics.fillStyle(0x111827, 1);
-  graphics.fillCircle(boss.position.x, boss.position.y, 66);
-  graphics.fillStyle(phaseColor, 0.9);
-  graphics.fillCircle(boss.position.x, boss.position.y, 50);
-  graphics.fillStyle(0x020617, 0.72);
-  graphics.fillCircle(boss.position.x - 18, boss.position.y - 12, 10);
-  graphics.fillCircle(boss.position.x + 18, boss.position.y - 12, 10);
-  graphics.lineStyle(6, 0x020617, 0.8);
-  graphics.lineBetween(
-    boss.position.x - 28,
-    boss.position.y + 20,
-    boss.position.x + 28,
-    boss.position.y + 20
-  );
-
-  if (boss.activeShieldUntilMs !== undefined && boss.activeShieldUntilMs > snapshot.serverTimeMs) {
-    graphics.lineStyle(6, 0xa78bfa, 0.75);
-    graphics.strokeCircle(boss.position.x, boss.position.y, 78);
-  }
-
-  drawCanvasHpBar(
-    graphics,
-    boss.position.x - 96,
-    boss.position.y - 98,
-    192,
-    12,
-    boss.hp,
-    boss.maxHp,
-    0xef4444
-  );
-}
-
-function drawPlayer(
-  graphics: Phaser.GameObjects.Graphics,
-  player: RaidSnapshot["players"][number],
-  isLocalPlayer: boolean
-) {
-  const color =
-    player.class === "warrior" ? 0xdc2626 : player.class === "ranger" ? 0x10b981 : 0x38bdf8;
-
-  graphics.fillStyle(0x020617, 0.72);
-  graphics.fillEllipse(player.position.x, player.position.y + 16, 46, 18);
-  graphics.fillStyle(color, player.status === "alive" ? 1 : 0.45);
-  graphics.fillCircle(player.position.x, player.position.y, isLocalPlayer ? 26 : 22);
-  graphics.lineStyle(isLocalPlayer ? 4 : 3, isLocalPlayer ? 0xfbbf24 : 0xf8fafc, 0.88);
-  graphics.strokeCircle(player.position.x, player.position.y, isLocalPlayer ? 26 : 22);
-
-  if (player.class === "warrior") {
-    graphics.fillStyle(0xfbbf24, 1);
-    graphics.fillRect(player.position.x + 10, player.position.y - 18, 8, 36);
-  } else if (player.class === "ranger") {
-    graphics.lineStyle(4, 0xf8fafc, 0.9);
-    graphics.lineBetween(
-      player.position.x - 4,
-      player.position.y - 24,
-      player.position.x + 28,
-      player.position.y
-    );
-    graphics.lineBetween(
-      player.position.x - 4,
-      player.position.y + 24,
-      player.position.x + 28,
-      player.position.y
-    );
-  } else {
-    graphics.lineStyle(4, 0xf8fafc, 0.88);
-    graphics.strokeCircle(player.position.x + 14, player.position.y - 14, 10);
-  }
-
-  drawCanvasHpBar(
-    graphics,
-    player.position.x - 30,
-    player.position.y - 42,
-    60,
-    8,
-    player.hp,
-    player.maxHp,
-    0x22c55e
-  );
 }
 
 function drawCanvasHpBar(

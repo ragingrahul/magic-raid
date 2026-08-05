@@ -123,21 +123,21 @@ export const PLAYER_ATTACK_DEFINITIONS: Record<
 
 export const BOSS_ATTACK_DEFINITIONS: Record<BossAttackKind, BossAttackDefinition> = {
   cleave: {
-    damage: 22,
+    damage: 11,
     range: 132,
     radius: 86,
     cooldownMs: BOSS_ATTACK_COOLDOWNS_MS.cleave,
     indicatorDurationMs: 320
   },
   ground_slam: {
-    damage: 34,
+    damage: 17,
     range: 280,
     radius: 156,
     cooldownMs: BOSS_ATTACK_COOLDOWNS_MS.ground_slam,
     indicatorDurationMs: 560
   },
   leap: {
-    damage: 28,
+    damage: 14,
     range: 560,
     radius: 92,
     cooldownMs: BOSS_ATTACK_COOLDOWNS_MS.leap,
@@ -152,7 +152,7 @@ export const BOSS_ATTACK_DEFINITIONS: Record<BossAttackKind, BossAttackDefinitio
     shieldDurationMs: 4_000
   },
   marked_strike: {
-    damage: 46,
+    damage: 23,
     range: 420,
     radius: 42,
     cooldownMs: BOSS_ATTACK_COOLDOWNS_MS.marked_strike,
