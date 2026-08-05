@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   GAME_LIMITS,
   RaidSnapshotSchema,
+  type BossStrategy,
   type PlayerAttackKind,
   type Position,
   type RaidSnapshot
@@ -23,6 +24,23 @@ type PhaserArenaProps = {
 const SNAPSHOT_EVENT = "magicraid:snapshot";
 const SEND_MOVE_EVERY_MS = 90;
 const INTERPOLATION_ALPHA = 0.22;
+const STRATEGY_VISUALS = {
+  area_denial: {
+    color: 0xf97316
+  },
+  leap_to_ranged: {
+    color: 0x14b8a6
+  },
+  magic_resistance: {
+    color: 0x8b5cf6
+  },
+  focus_healer: {
+    color: 0xf43f5e
+  },
+  melee_retaliation: {
+    color: 0xfbbf24
+  }
+} as const satisfies Record<BossStrategy, { color: number }>;
 
 export function PhaserArena({
   snapshot,
@@ -230,7 +248,7 @@ export function PhaserArena({
             const graphics = this.graphics;
             const snapshotToDraw = this.renderSnapshot;
             graphics.clear();
-            drawArena(graphics);
+            drawArena(graphics, snapshotToDraw);
 
             for (const attack of snapshotToDraw.attacks) {
               if (attack.expiresAtMs >= snapshotToDraw.serverTimeMs) {
@@ -344,7 +362,7 @@ function lerpPosition(current: Position, target: Position): Position {
   };
 }
 
-function drawArena(graphics: Phaser.GameObjects.Graphics) {
+function drawArena(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot) {
   graphics.fillStyle(0x07111f, 1);
   graphics.fillRect(0, 0, GAME_LIMITS.arena.width, GAME_LIMITS.arena.height);
   graphics.lineStyle(1, 0x24364f, 0.42);
@@ -359,6 +377,84 @@ function drawArena(graphics: Phaser.GameObjects.Graphics) {
 
   graphics.lineStyle(3, 0x6ee7d8, 0.5);
   graphics.strokeRect(18, 18, GAME_LIMITS.arena.width - 36, GAME_LIMITS.arena.height - 36);
+  drawStrategyTell(graphics, snapshot);
+}
+
+function drawStrategyTell(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot) {
+  const color = STRATEGY_VISUALS[snapshot.boss.strategy].color;
+  const boss = snapshot.boss;
+
+  if (snapshot.boss.strategy === "area_denial") {
+    const center = centroid(snapshot.players);
+    graphics.fillStyle(color, 0.08);
+    graphics.fillCircle(center.x, center.y, 216);
+    graphics.lineStyle(4, color, 0.42);
+    graphics.strokeCircle(center.x, center.y, 92);
+    graphics.strokeCircle(center.x, center.y, 152);
+    graphics.strokeCircle(center.x, center.y, 216);
+    return;
+  }
+
+  if (snapshot.boss.strategy === "leap_to_ranged") {
+    const target = farthestAlivePlayer(snapshot);
+    if (!target) {
+      return;
+    }
+
+    graphics.lineStyle(5, color, 0.62);
+    graphics.lineBetween(boss.position.x, boss.position.y, target.position.x, target.position.y);
+    graphics.fillStyle(color, 0.72);
+    graphics.fillTriangle(
+      target.position.x,
+      target.position.y - 34,
+      target.position.x - 26,
+      target.position.y + 18,
+      target.position.x + 26,
+      target.position.y + 18
+    );
+    return;
+  }
+
+  if (snapshot.boss.strategy === "magic_resistance") {
+    graphics.lineStyle(5, color, 0.55);
+    graphics.strokeCircle(boss.position.x, boss.position.y, 96);
+    graphics.strokeCircle(boss.position.x, boss.position.y, 118);
+    graphics.lineStyle(3, color, 0.38);
+    drawRadials(graphics, boss.position, 76, 128, 6);
+    return;
+  }
+
+  if (snapshot.boss.strategy === "focus_healer") {
+    const target = weakestAlivePlayer(snapshot);
+    if (!target) {
+      return;
+    }
+
+    graphics.lineStyle(4, color, 0.75);
+    graphics.strokeCircle(target.position.x, target.position.y, 42);
+    graphics.lineBetween(target.position.x - 58, target.position.y, target.position.x - 22, target.position.y);
+    graphics.lineBetween(target.position.x + 22, target.position.y, target.position.x + 58, target.position.y);
+    graphics.lineBetween(target.position.x, target.position.y - 58, target.position.x, target.position.y - 22);
+    graphics.lineBetween(target.position.x, target.position.y + 22, target.position.x, target.position.y + 58);
+    return;
+  }
+
+  graphics.lineStyle(5, color, 0.58);
+  graphics.strokeCircle(boss.position.x, boss.position.y, 116);
+  graphics.fillStyle(color, 0.46);
+  for (let index = 0; index < 10; index += 1) {
+    const angle = (Math.PI * 2 * index) / 10;
+    const inner = pointOnCircle(boss.position, angle, 86);
+    const outer = pointOnCircle(boss.position, angle, 130);
+    graphics.fillTriangle(
+      inner.x,
+      inner.y,
+      pointOnCircle(boss.position, angle - 0.1, 108).x,
+      pointOnCircle(boss.position, angle - 0.1, 108).y,
+      outer.x,
+      outer.y
+    );
+  }
 }
 
 function drawAttack(
@@ -390,7 +486,12 @@ function drawBoss(graphics: Phaser.GameObjects.Graphics, snapshot: RaidSnapshot)
   const { boss } = snapshot;
   const phaseColor =
     boss.phase === "phase_3" ? 0xef4444 : boss.phase === "phase_2" ? 0xf59e0b : 0x8b5cf6;
+  const strategyColor = STRATEGY_VISUALS[boss.strategy].color;
 
+  graphics.fillStyle(strategyColor, 0.12);
+  graphics.fillCircle(boss.position.x, boss.position.y, 86);
+  graphics.lineStyle(4, strategyColor, 0.68);
+  graphics.strokeCircle(boss.position.x, boss.position.y, 72);
   graphics.fillStyle(0x111827, 1);
   graphics.fillCircle(boss.position.x, boss.position.y, 66);
   graphics.fillStyle(phaseColor, 0.9);
@@ -489,4 +590,66 @@ function drawCanvasHpBar(
   graphics.fillRect(x, y, width * percent, height);
   graphics.lineStyle(1, 0xf8fafc, 0.55);
   graphics.strokeRect(x, y, width, height);
+}
+
+function farthestAlivePlayer(snapshot: RaidSnapshot): RaidSnapshot["players"][number] | undefined {
+  return [...snapshot.players]
+    .filter((player) => player.status === "alive")
+    .sort(
+      (first, second) =>
+        distance(second.position, snapshot.boss.position) -
+        distance(first.position, snapshot.boss.position)
+    )[0];
+}
+
+function weakestAlivePlayer(snapshot: RaidSnapshot): RaidSnapshot["players"][number] | undefined {
+  return [...snapshot.players]
+    .filter((player) => player.status === "alive")
+    .sort(
+      (first, second) =>
+        first.hp / Math.max(1, first.maxHp) - second.hp / Math.max(1, second.maxHp)
+    )[0];
+}
+
+function centroid(players: RaidSnapshot["players"]): Position {
+  const alivePlayers = players.filter((player) => player.status === "alive");
+  const divisor = Math.max(1, alivePlayers.length);
+  const total = alivePlayers.reduce(
+    (sum, player) => ({
+      x: sum.x + player.position.x,
+      y: sum.y + player.position.y
+    }),
+    { x: 0, y: 0 }
+  );
+
+  return {
+    x: total.x / divisor,
+    y: total.y / divisor
+  };
+}
+
+function drawRadials(
+  graphics: Phaser.GameObjects.Graphics,
+  center: Position,
+  innerRadius: number,
+  outerRadius: number,
+  count: number
+) {
+  for (let index = 0; index < count; index += 1) {
+    const angle = (Math.PI * 2 * index) / count;
+    const inner = pointOnCircle(center, angle, innerRadius);
+    const outer = pointOnCircle(center, angle, outerRadius);
+    graphics.lineBetween(inner.x, inner.y, outer.x, outer.y);
+  }
+}
+
+function pointOnCircle(center: Position, angle: number, radius: number): Position {
+  return {
+    x: center.x + Math.cos(angle) * radius,
+    y: center.y + Math.sin(angle) * radius
+  };
+}
+
+function distance(first: Position, second: Position): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }

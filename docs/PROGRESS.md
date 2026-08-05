@@ -16,7 +16,7 @@ Repository contents:
 Missing:
 - No production hosted room backend yet. In live/on-chain mode, the room roster, classes, lifecycle, boss HP, elapsed seconds, strategy, and contribution damage are canonical in the on-chain `RaidState`; the in-memory Next room store remains a cache for reconstructed snapshots, display names, high-frequency movement, cooldown interpolation, analytics, and UI state.
 
-Assessment: baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-005` local gameplay, Day 4 room sync/wallet UI, Day 5 AI adaptation, Day 6 settlement/authority hardening, per-room MagicBlock `RaidState` PDA allocation, on-chain room roster storage, and live devnet room combat routing are implemented and verified. Production room hosting and Day 7 demo hardening remain ahead.
+Assessment: baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-005` local gameplay, Day 4 room sync/wallet UI, Day 5 AI adaptation, Day 6 settlement/authority hardening, per-room MagicBlock `RaidState` PDA allocation, on-chain room roster storage, live devnet room combat routing, and Day 7 demo hardening are implemented and verified. Production room hosting and optional 5-8 player capacity testing remain ahead.
 
 ## Task Status
 
@@ -50,7 +50,10 @@ Assessment: baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authorit
 | `QA-002` | Complete | Full frontend test suite covers deterministic game rules, analytics, AI fallback/schema validation, network authority reconciliation, and settlement instruction encoding. |
 | `QA-003` | Complete | Anchor unit tests cover valid settlement, invalid signer, duplicate settlement, invalid player count, invalid score bounds, invalid terminal status, and contribution-damage mismatch. |
 | `QA-004` | Complete | Browser/API smoke covered create room, authority panel, settlement panel, and desktop/mobile screenshots. |
-| Remaining demo tasks | Not started | Await Day 7 demo script, fallback runbook, and final polish. |
+| `DEMO-001` | Complete | `docs/DEMO.md` contains the step-by-step judging script, expected timings, proof points, and reset procedure. |
+| `DEMO-002` | Complete | `docs/DEMO.md` contains honest fallback paths for MagicBlock, LLM, wallet, Solana settlement, and multiplayer join failures. |
+| `POLISH-001` | Complete | Each approved boss strategy now has a distinct Phaser arena tell plus a concise HUD cue; the strategy refresh cadence is five seconds. |
+| `OPT-001` | Not started | Optional 5-8 player capacity test remains deferred to avoid risking the required demo. |
 
 ## Repository Assessment Commands Run
 
@@ -317,9 +320,27 @@ Day 6 verification, run on 2026-08-05:
 - Visual smoke used a temporary Playwright install under `/tmp/magicraid-pw` because the in-app Browser tool was not exposed by tool discovery. Desktop screenshot: `/tmp/magicraid-onchain-desktop.png`; mobile screenshot: `/tmp/magicraid-onchain-mobile.png`. Both loaded `http://localhost:3000` under `.env.local`; desktop emitted only Chromium WebGL performance warnings, and mobile had no console or page errors.
 - The known local shell startup warnings appeared on `zsh -lic` commands but did not block successful exits.
 
+Day 7 demo hardening implementation, run on 2026-08-05:
+- Added `docs/DEMO.md` with the primary judging script, preflight checklist, live and local-rehearsal environment values, proof-point callouts, strategy-trigger instructions, settlement steps, and reset procedure.
+- Added fallback runbook entries for MagicBlock connectivity issues, LLM timeout or invalid response, wallet issues, Solana transaction failure, and multiplayer join failure. The runbook explicitly labels what remains live, what is degraded, and how to continue without misrepresenting fallback behaviour.
+- Added distinct Phaser arena tells for all approved strategies: area-denial rings, leap-to-ranged target line, magic-resistance ward, focus reticle, and melee retaliation spikes.
+- Added a concise `Boss Tell` HUD cue in the main raid panel and lowered the strategy polling interval from six seconds to five seconds so an applied adaptation is visible within the Day 7 acceptance window.
+- Updated the home page milestone badge and checklist from Day 6 settlement copy to Day 7 demo readiness copy.
+
+Day 7 verification, run on 2026-08-05:
+- `zsh -lic 'npm run typecheck'` from `frontend/`: passed.
+- `zsh -lic 'npm run lint'` from `frontend/`: passed.
+- `zsh -lic 'npm run test'` from `frontend/`: passed; 9 test files and 49 tests passed.
+- `zsh -lic 'npm run build'` from `frontend/`: passed; production build includes `/api/rooms/[roomCode]/strategy` and `/api/rooms/[roomCode]/settlement`.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'` from the repository root: passed; SBF build completed and 21 Rust tests passed.
+- Browser rehearsal used the temporary Playwright install at `/tmp/magicraid-pw` because the in-app Browser control tool was not exposed by tool discovery. The app ran locally with `OPENAI_API_KEY=`, `MAGICRAID_ROOM_STATE=memory`, `MAGICRAID_MAGICBLOCK_AUTHORITY=local`, and `MAGICRAID_SETTLEMENT_MODE=local`.
+- Desktop browser rehearsal prepared a local fallback Ranger room, routed movement and a hit through the room API, called the strategy route, verified the fallback decision changed the boss to `leap_to_ranged`, verified boss HP dropped below max, verified the `DAY-007` header, verified `Boss Tell` showed the teal leap cue while `AI Strategy` showed `Leap To Ranged`, verified `Authority` truthfully showed `Local fallback`, and captured `/tmp/magicraid-day7-desktop.png`.
+- Mobile browser rehearsal created a room through the UI with a demo wallet, verified the `DAY-007` header, canvas, and `Boss Tell` cue rendered without horizontal overflow at `375x900`, and captured `/tmp/magicraid-day7-mobile.png`.
+- Browser rehearsal reported no page errors or console errors after filtering non-blocking Chromium WebGL warnings.
+
 ## Immediate Next Step
 
-Continue with Day 7 demo hardening: `DEMO-001`, `DEMO-002`, and `POLISH-001`. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Recommended next step: run the `docs/DEMO.md` live devnet preflight immediately before judging, then rehearse the main script once with `MAGICRAID_MAGICBLOCK_AUTHORITY=live`. Optional `OPT-001` 5-8 player capacity testing remains deferred unless the required 2-4 player demo stays stable. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.

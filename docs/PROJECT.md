@@ -15,7 +15,7 @@ Current repository state:
 - `Anchor.toml`, root `Cargo.toml`, and `programs/raid_settlement/` contain the Anchor per-room MagicBlock `RaidState` and bounded settlement program.
 - `backend/` is still an empty placeholder.
 
-Implication: live devnet room roster, combat, and settlement are now available in this workspace; the next coding tasks are Day 7 demo hardening, fallback rehearsal, and any polish needed to make the MagicBlock, AI, and settlement proof points obvious.
+Implication: live devnet room roster, combat, settlement, Day 7 demo hardening, fallback rehearsal, and visible adaptation polish are now available in this workspace. The next work is live preflight rehearsal before judging, optional 5-8 player capacity testing, and production hosting only if the required demo stays stable.
 
 ## Core Concept
 
@@ -144,11 +144,11 @@ The hackathon demo is successful when:
 
 ## Immediate Next Task
 
-`MB-001` through `MB-004`, `APP-001`, `GAME-001` through `GAME-005`, `NET-001` through `NET-003`, `WEB-001` through `WEB-003`, `AI-001` through `AI-003`, `SOL-001` through `SOL-003`, and `QA-001` through `QA-004` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
+`MB-001` through `MB-004`, `APP-001`, `GAME-001` through `GAME-005`, `NET-001` through `NET-003`, `WEB-001` through `WEB-003`, `AI-001` through `AI-003`, `SOL-001` through `SOL-003`, `QA-001` through `QA-004`, `DEMO-001`, `DEMO-002`, and `POLISH-001` are complete; see `docs/MAGICBLOCK_VERIFICATION.md`, `docs/DEMO.md`, and `docs/PROGRESS.md`.
 
 Next begin:
-- `DEMO-001`: write and rehearse the judging script.
-- `DEMO-002`: rehearse fallback paths for MagicBlock, AI, wallet, and settlement issues.
-- `POLISH-001`: improve visible adaptation and reduce demo confusion.
+- Live devnet preflight rehearsal using `docs/DEMO.md`.
+- `OPT-001` only if the required 2-4 player demo remains stable.
+- Production hosting only after the local and live judging flow is repeatable.
 
 Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`. Run Rust and Anchor verification with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.

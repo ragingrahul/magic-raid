@@ -13,6 +13,7 @@ import {
   RoomSessionSchema,
   SolanaAddressSchema,
   type BossStrategyDecision,
+  type BossStrategy,
   type PlayerAttackKind,
   type PlayerClass,
   type Position,
@@ -60,6 +61,46 @@ declare global {
 const ROOM_STORAGE_KEY = "magicraid.roomSession.v1";
 const WALLET_STORAGE_KEY = "magicraid.wallet.v1";
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const STRATEGY_REFRESH_MS = 5_000;
+const STRATEGY_TELLS = {
+  area_denial: {
+    label: "Area Denial",
+    tell: "Warning rings cover the team cluster.",
+    className:
+      "border-orange-300 bg-orange-50 text-orange-950 dark:border-orange-400/45 dark:bg-orange-950/25 dark:text-orange-100"
+  },
+  leap_to_ranged: {
+    label: "Leap To Ranged",
+    tell: "A teal line locks onto the farthest raider.",
+    className:
+      "border-teal-300 bg-teal-50 text-teal-950 dark:border-teal-400/45 dark:bg-teal-950/25 dark:text-teal-100"
+  },
+  magic_resistance: {
+    label: "Magic Resistance",
+    tell: "A violet ward forms around the boss.",
+    className:
+      "border-violet-300 bg-violet-50 text-violet-950 dark:border-violet-400/45 dark:bg-violet-950/25 dark:text-violet-100"
+  },
+  focus_healer: {
+    label: "Focus Healer",
+    tell: "A red reticle marks the weakest raider.",
+    className:
+      "border-rose-300 bg-rose-50 text-rose-950 dark:border-rose-400/45 dark:bg-rose-950/25 dark:text-rose-100"
+  },
+  melee_retaliation: {
+    label: "Melee Retaliation",
+    tell: "Gold spikes flare near the boss.",
+    className:
+      "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-400/45 dark:bg-amber-950/25 dark:text-amber-100"
+  }
+} as const satisfies Record<
+  BossStrategy,
+  {
+    label: string;
+    tell: string;
+    className: string;
+  }
+>;
 
 export function RaidRoom() {
   const [displayName, setDisplayName] = useState("Raider");
@@ -250,7 +291,7 @@ export function RaidRoom() {
     }
 
     void requestStrategyUpdate();
-    const interval = window.setInterval(requestStrategyUpdate, 6_000);
+    const interval = window.setInterval(requestStrategyUpdate, STRATEGY_REFRESH_MS);
 
     return () => {
       cancelled = true;
@@ -572,6 +613,14 @@ export function RaidRoom() {
     Boolean(session && terminalRaid && walletsReady) &&
     snapshot?.status !== "settled" &&
     !settlementBusy;
+  const bossStrategy = snapshot?.boss.strategy ?? "area_denial";
+  const strategyTell = STRATEGY_TELLS[bossStrategy];
+  const strategyJustChanged = Boolean(
+    snapshot &&
+      lastDecision &&
+      snapshot.boss.strategy === lastDecision.strategy &&
+      Math.abs(snapshot.serverTimeMs - lastDecision.createdAtMs) <= 5_000
+  );
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -595,6 +644,16 @@ export function RaidRoom() {
               <HudStat label="Damage" value={localDamage.toString()} />
               <HudStat label="Tick" value={(snapshot?.tick ?? 0).toString()} />
             </div>
+          </div>
+
+          <div className={`mt-3 rounded-md border px-3 py-2 ${strategyTell.className}`}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-xs font-semibold uppercase">Boss Tell</span>
+              <span className="text-sm font-semibold">
+                {strategyJustChanged ? "Adapting" : strategyTell.label}
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-medium">{strategyTell.tell}</p>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">

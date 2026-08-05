@@ -101,7 +101,7 @@ Escalate if:
 ## KI-007: Solana Settlement May Be Blocked By Network Or Wallet Issues
 
 Severity: medium.
-Status: open.
+Status: open, mitigated by Day 7 runbook.
 
 Issue: wallet setup, devnet congestion, RPC issues, or program deployment problems could block live settlement.
 
@@ -126,7 +126,7 @@ Mitigation:
 - `frontend/.env.example` documents the server-side OpenAI strategy variables and the Day 6 room/MagicBlock/settlement authority variables.
 - `frontend/README.md` documents local versus live values for `MAGICRAID_ROOM_STATE`, `MAGICRAID_ROOM_KEYPAIR`, `MAGICRAID_MAGICBLOCK_AUTHORITY`, `MAGICRAID_MAGICBLOCK_KEYPAIR`, `MAGICRAID_SETTLEMENT_MODE`, and `MAGICRAID_SETTLEMENT_KEYPAIR`.
 - Never commit secrets.
-- Add deployment checklist under `DEMO-001`.
+- `docs/DEMO.md` now includes a preflight checklist, live environment values, local rehearsal values, and reset steps under `DEMO-001`.
 
 Escalate if:
 - Required service credentials are unavailable.
@@ -134,7 +134,7 @@ Escalate if:
 ## KI-009: Demo Proof Points Need To Be Obvious
 
 Severity: medium.
-Status: open.
+Status: mitigated by Day 7 polish.
 
 Issue: judges may miss the distinction between local rendering, MagicBlock authority, AI strategy, and Solana settlement unless the UI makes them visible.
 
@@ -142,7 +142,8 @@ Mitigation:
 - `WEB-003` analytics and strategy panel is implemented.
 - Day 6 added the `Authority` panel showing `magicblock_live` versus `local_fallback` and combat/movement authority.
 - Day 6 added the `Settlement` panel showing pending, success, failure, local-verified, explorer, and settlement-record states.
-- Use `DEMO-001` script to call out proof points.
+- Day 7 added `docs/DEMO.md` to call out proof points in order.
+- Day 7 added distinct strategy tells in the Phaser arena plus a concise `Boss Tell` HUD cue.
 
 Escalate if:
 - UI changes hide or blur MagicBlock, AI, or Solana proof points.
