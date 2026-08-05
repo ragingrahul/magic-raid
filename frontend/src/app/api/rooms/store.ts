@@ -17,6 +17,7 @@ type RoomStoreGlobal = typeof globalThis & {
 };
 
 const roomGlobal = globalThis as RoomStoreGlobal;
+const RAID_ERROR_MESSAGE_MAX_LENGTH = 160;
 
 export const roomStore =
   roomGlobal.__magicRaidRooms ?? new Map<string, RoomAuthorityState>();
@@ -65,7 +66,7 @@ export function roomErrorResponse(error: unknown) {
       RaidErrorMessageSchema.parse({
         type: "raid_error",
         code: error.code,
-        message: error.message
+        message: truncateRaidErrorMessage(error.message)
       }),
       { status: error.status }
     );
@@ -90,4 +91,11 @@ export function roomErrorResponse(error: unknown) {
     }),
     { status: 500 }
   );
+}
+
+function truncateRaidErrorMessage(message: string) {
+  const trimmed = message.trim() || "Room request failed.";
+  return trimmed.length <= RAID_ERROR_MESSAGE_MAX_LENGTH
+    ? trimmed
+    : `${trimmed.slice(0, RAID_ERROR_MESSAGE_MAX_LENGTH - 3)}...`;
 }

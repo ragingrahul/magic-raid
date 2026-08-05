@@ -34,6 +34,17 @@ type WalletState = {
   source: "injected" | "demo";
 };
 
+class RoomRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+    public readonly status?: number
+  ) {
+    super(message);
+    this.name = "RoomRequestError";
+  }
+}
+
 type WalletStatus = "idle" | "connecting" | "connected";
 type RoomStatus = "idle" | "creating" | "joining" | "connected" | "reconnecting";
 
@@ -216,8 +227,14 @@ export function RaidRoom() {
 
     const activeSession = session;
     let cancelled = false;
+    let refreshing = false;
 
     async function refreshSnapshot() {
+      if (refreshing) {
+        return;
+      }
+
+      refreshing = true;
       try {
         const recovered = await fetchRoomSession(activeSession);
         if (cancelled) {
@@ -232,9 +249,24 @@ export function RaidRoom() {
         setSyncError(null);
       } catch (error) {
         if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : "Snapshot recovery failed.";
+
+          if (shouldDiscardStoredSession(error)) {
+            saveRoomSession(null);
+            setSnapshot(null);
+            setAuthorityStatus(null);
+            setRoomStatus("idle");
+            setSyncError(null);
+            setFormError(message);
+            return;
+          }
+
           setRoomStatus("reconnecting");
-          setSyncError(error instanceof Error ? error.message : "Snapshot recovery failed.");
+          setSyncError(message);
         }
+      } finally {
+        refreshing = false;
       }
     }
 
@@ -245,7 +277,7 @@ export function RaidRoom() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [fetchRoomSession, session]);
+  }, [fetchRoomSession, saveRoomSession, session]);
 
   useEffect(() => {
     if (!session || snapshot?.status !== "active") {
@@ -595,6 +627,11 @@ export function RaidRoom() {
     setSettlementBusy(false);
   }
 
+  // Keep the prerendered client component deterministic until browser storage is read.
+  if (!walletLoaded) {
+    return <RaidRoomShell />;
+  }
+
   const canAct = Boolean(session && snapshot?.status === "active" && roomStatus === "connected");
   const bossHp = snapshot?.boss.hp ?? GAME_LIMITS.boss.maxHp;
   const bossMaxHp = snapshot?.boss.maxHp ?? GAME_LIMITS.boss.maxHp;
@@ -871,6 +908,76 @@ export function RaidRoom() {
             </div>
           </section>
         ) : null}
+      </aside>
+    </div>
+  );
+}
+
+function RaidRoomShell() {
+  return (
+    <div
+      className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <section className="grid gap-3">
+        <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-background">
+          <div className="absolute inset-0 grid place-items-center bg-background/75 p-4 text-center">
+            <p className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-card-foreground">
+              Loading raid room.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-card p-3 text-card-foreground">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.4fr]">
+            <HudBar label="Boss" value={GAME_LIMITS.boss.maxHp} max={GAME_LIMITS.boss.maxHp} />
+            <HudBar
+              label="Raider"
+              value={GAME_LIMITS.player.maxHp}
+              max={GAME_LIMITS.player.maxHp}
+            />
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <HudStat label="Phase" value="phase 1" />
+              <HudStat label="Status" value="loading" />
+              <HudStat label="Damage" value="0" />
+              <HudStat label="Tick" value="0" />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled
+              className="min-h-10 rounded-md border border-border bg-card px-3 text-sm font-medium text-card-foreground opacity-55"
+            >
+              Strike
+            </button>
+            <button
+              type="button"
+              disabled
+              className="min-h-10 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground opacity-55"
+            >
+              Special
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <aside className="grid content-start gap-3">
+        {["Wallet", "AI Strategy", "Authority", "Settlement", "Room"].map((label) => (
+          <section
+            key={label}
+            className="rounded-md border border-border bg-card p-4 text-card-foreground"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">{label}</h2>
+              <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+                Loading
+              </span>
+            </div>
+          </section>
+        ))}
       </aside>
     </div>
   );
@@ -1196,10 +1303,23 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 
   if (!response.ok) {
     const parsed = RaidErrorMessageSchema.safeParse(payload);
-    throw new Error(parsed.success ? parsed.data.message : "Room request failed.");
+    throw new RoomRequestError(
+      parsed.success ? parsed.data.message : "Room request failed.",
+      parsed.success ? parsed.data.code : undefined,
+      response.status
+    );
   }
 
   return payload;
+}
+
+function shouldDiscardStoredSession(error: unknown) {
+  return (
+    error instanceof RoomRequestError &&
+    (error.status === 404 ||
+      error.code === "room_not_found" ||
+      error.code === "player_not_found")
+  );
 }
 
 function truncateAddress(address: string, chars = 4) {
