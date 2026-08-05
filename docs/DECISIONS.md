@@ -198,3 +198,27 @@ Status: accepted.
 Decision: prioritize tests for deterministic game rules, AI validation/fallback, and settlement constraints. UI tests should cover the demo path rather than every visual detail.
 
 Rationale: the MVP needs confidence in critical behaviour, not exhaustive coverage.
+
+## D-023: Day 6 Authority Split Is Explicit
+
+Status: accepted.
+
+Decision: keep movement authority in the room server for low-latency Phaser interpolation, route combat-critical player hits through the MagicBlock adapter only when `MAGICRAID_MAGICBLOCK_AUTHORITY=live`, reconcile MagicBlock readbacks into rendered snapshots, and clearly label `magicblock_live` versus `local_fallback` in the UI. Final settlement validates terminal result data against the compact MagicBlock `RaidState` before recording the Solana settlement record.
+
+Rationale: this preserves the verified MagicBlock proof, makes live combat authority explicit, and keeps the fast visual movement loop simple while settlement remains tied to the on-chain room `RaidState`.
+
+## D-024: Per-Room RaidState PDAs For Live Devnet Rooms
+
+Status: accepted.
+
+Decision: derive each live room's `RaidState` PDA from seeds `[raid-state, raid_id]`, where room gameplay maps the room code to the 16-byte raid id `magicraid:${ROOM_CODE}`. The host initializes roster slot 0, and joining players are appended with `join_raid` until combat has started.
+
+Rationale: live devnet rooms no longer share one fixed PDA, so a normal app room can initialize, delegate, mutate, commit, undelegate, and settle its own MagicBlock/Solana state.
+
+## D-025: On-Chain Room Roster Is Canonical
+
+Status: accepted.
+
+Decision: keep settlement-critical live room data in the on-chain per-room `RaidState`: roster wallets/classes, lifecycle, boss HP, elapsed seconds, boss strategy, player count, and contribution damage. Keep the Next room store as a cache for reconstructed snapshots, display names, high-frequency movement positions, cooldown interpolation, analytics, and UI/session state.
+
+Rationale: the user-facing room should survive beyond one process for the data that matters to MagicBlock and settlement, while movement and rendering state should remain fast and cheap. Writing every movement frame to Solana devnet would add latency, cost, and account churn without improving the settlement proof.

@@ -224,6 +224,8 @@ Priority: required before claiming live MagicBlock room authority.
 Dependencies: `NET-001`, `MB-004`, `GAME-005`.
 
 Acceptance criteria:
+- Live/on-chain room creation initializes the per-room `RaidState` with the host wallet/class.
+- Live/on-chain joins append wallet/class slots to the same `RaidState` before combat starts.
 - State-changing room inputs route through the verified Magic Router/MagicBlock authority path instead of only the in-memory Next room authority.
 - The room service reconciles MagicBlock `RaidState` readbacks into the snapshots clients render.
 - Movement and visual interpolation remain low-latency, but combat-critical mutations, raid terminal state, contribution damage, and final raid summary come from the MagicBlock-authoritative state.

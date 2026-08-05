@@ -8,6 +8,7 @@ import {
   RaidClientMessageSchema,
   RaidErrorMessageSchema,
   RaidSnapshotMessageSchema,
+  RoomSettlementStatusSchema,
   RoomStrategyUpdateSchema,
   RoomSessionSchema,
   SolanaAddressSchema,
@@ -16,6 +17,8 @@ import {
   type PlayerClass,
   type Position,
   type RaidAnalyticsSummary,
+  type RoomAuthorityStatus,
+  type RoomSettlementStatus,
   type RaidSnapshot,
   type RoomSession
 } from "@/game/schemas";
@@ -74,6 +77,9 @@ export function RaidRoom() {
   const [lastDecision, setLastDecision] = useState<BossStrategyDecision | null>(null);
   const [adaptationCount, setAdaptationCount] = useState(0);
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  const [authorityStatus, setAuthorityStatus] = useState<RoomAuthorityStatus | null>(null);
+  const [settlementStatus, setSettlementStatus] = useState<RoomSettlementStatus | null>(null);
+  const [settlementBusy, setSettlementBusy] = useState(false);
   const [copiedRoom, setCopiedRoom] = useState(false);
   const [walletLoaded, setWalletLoaded] = useState(false);
   const clientSequenceRef = useRef(0);
@@ -84,6 +90,7 @@ export function RaidRoom() {
     () => snapshot?.players.find((player) => player.id === session?.playerId),
     [session?.playerId, snapshot?.players]
   );
+  const roomFormDisabled = !wallet;
 
   const profilePayload = useMemo(
     () => ({
@@ -112,6 +119,7 @@ export function RaidRoom() {
       };
       saveRoomSession(nextSession);
       setSnapshot(roomSession.snapshot);
+      setAuthorityStatus(roomSession.authority ?? null);
       setRoomStatus("connected");
       setFormError(null);
       setSyncError(null);
@@ -119,6 +127,8 @@ export function RaidRoom() {
       setLastDecision(null);
       setAdaptationCount(0);
       setStrategyError(null);
+      setSettlementStatus(null);
+      setSettlementBusy(false);
     },
     [saveRoomSession]
   );
@@ -176,6 +186,7 @@ export function RaidRoom() {
         setSnapshot((current) =>
           current && current.tick > recovered.snapshot.tick ? current : recovered.snapshot
         );
+        setAuthorityStatus(recovered.authority ?? null);
         setRoomStatus("connected");
         setSyncError(null);
       } catch (error) {
@@ -224,6 +235,7 @@ export function RaidRoom() {
         setSnapshot((current) =>
           current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
         );
+        setAuthorityStatus(parsed.authority ?? null);
         setAnalytics(parsed.analytics);
         setLastDecision(parsed.lastDecision ?? null);
         setAdaptationCount(parsed.adaptationCount);
@@ -247,11 +259,12 @@ export function RaidRoom() {
   }, [session, snapshot?.status]);
 
   useEffect(() => {
-    if (!session || !walletLoaded) {
+    if (!session || !walletLoaded || !wallet?.address) {
       return;
     }
 
     const activeSession = session;
+    const walletAddress = wallet.address;
     const controller = new AbortController();
 
     async function updateWalletProfile() {
@@ -263,13 +276,14 @@ export function RaidRoom() {
           },
           body: JSON.stringify({
             playerId: activeSession.playerId,
-            wallet: wallet?.address ?? null
+            wallet: walletAddress
           }),
           signal: controller.signal
         });
         const payload = await parseJsonResponse(response);
         const parsed = RoomSessionSchema.parse(payload);
         setSnapshot(parsed.snapshot);
+        setAuthorityStatus(parsed.authority ?? null);
         setSyncError(null);
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -356,6 +370,7 @@ export function RaidRoom() {
               setSnapshot((current) =>
                 current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
               );
+              setAuthorityStatus(parsed.authority ?? null);
               setSyncError(null);
             } catch (error) {
               setSyncError(error instanceof Error ? error.message : "Input was rejected.");
@@ -472,6 +487,58 @@ export function RaidRoom() {
     window.setTimeout(() => setCopiedRoom(false), 1_200);
   }
 
+  async function submitSettlement() {
+    if (!session) {
+      return;
+    }
+
+    setSettlementBusy(true);
+    setSettlementStatus(
+      RoomSettlementStatusSchema.parse({
+        status: "pending",
+        authority: authorityStatus ?? undefined,
+        message: "Submitting settlement."
+      })
+    );
+
+    try {
+      const response = await fetch(`/api/rooms/${session.roomCode}/settlement`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          playerId: session.playerId
+        })
+      });
+      const payload = await parseJsonResponse(response);
+      const parsed = RoomSettlementStatusSchema.parse(payload);
+      setSettlementStatus(parsed);
+      setAuthorityStatus(parsed.authority ?? authorityStatus);
+      if (parsed.summary?.transactionSignature || parsed.status === "local_verified") {
+        setSnapshot((current) =>
+          current && current.status !== "settled"
+            ? {
+                ...current,
+                status: "settled",
+                tick: Math.min(GAME_LIMITS.networking.maxSnapshotTick, current.tick + 1)
+              }
+            : current
+        );
+      }
+    } catch (error) {
+      setSettlementStatus(
+        RoomSettlementStatusSchema.parse({
+          status: "failed",
+          authority: authorityStatus ?? undefined,
+          message: truncateMessage(error instanceof Error ? error.message : "Settlement failed.")
+        })
+      );
+    } finally {
+      setSettlementBusy(false);
+    }
+  }
+
   function leaveRoom() {
     saveRoomSession(null);
     setSnapshot(null);
@@ -482,6 +549,9 @@ export function RaidRoom() {
     setLastDecision(null);
     setAdaptationCount(0);
     setStrategyError(null);
+    setAuthorityStatus(null);
+    setSettlementStatus(null);
+    setSettlementBusy(false);
   }
 
   const canAct = Boolean(session && snapshot?.status === "active" && roomStatus === "connected");
@@ -490,6 +560,18 @@ export function RaidRoom() {
   const localHp = currentPlayer?.hp ?? GAME_LIMITS.player.maxHp;
   const localMaxHp = currentPlayer?.maxHp ?? GAME_LIMITS.player.maxHp;
   const localDamage = currentPlayer?.contribution.damage ?? 0;
+  const terminalRaid =
+    snapshot?.status === "victory" ||
+    snapshot?.status === "defeat" ||
+    snapshot?.status === "timeout" ||
+    snapshot?.status === "settled";
+  const walletsReady = Boolean(
+    snapshot?.players.length && snapshot.players.every((player) => player.wallet)
+  );
+  const canSubmitSettlement =
+    Boolean(session && terminalRaid && walletsReady) &&
+    snapshot?.status !== "settled" &&
+    !settlementBusy;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -562,6 +644,17 @@ export function RaidRoom() {
           strategyError={strategyError}
         />
 
+        <AuthorityPanel authority={authorityStatus} />
+
+        <SettlementPanel
+          snapshot={snapshot}
+          settlement={settlementStatus}
+          busy={settlementBusy}
+          walletsReady={walletsReady}
+          canSubmit={canSubmitSettlement}
+          onSubmit={submitSettlement}
+        />
+
         <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold">Room</h2>
@@ -610,7 +703,7 @@ export function RaidRoom() {
             <form onSubmit={createRoom}>
               <button
                 type="submit"
-                disabled={roomStatus === "creating"}
+                disabled={roomStatus === "creating" || roomFormDisabled}
                 aria-busy={roomStatus === "creating"}
                 className="min-h-10 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
               >
@@ -636,7 +729,11 @@ export function RaidRoom() {
               </label>
               <button
                 type="submit"
-                disabled={roomStatus === "joining" || joinCode.trim().length < 4}
+                disabled={
+                  roomStatus === "joining" ||
+                  joinCode.trim().length < 4 ||
+                  roomFormDisabled
+                }
                 aria-busy={roomStatus === "joining"}
                 className="min-h-10 rounded-md border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
               >
@@ -783,6 +880,147 @@ function AnalyticsPanel({
   );
 }
 
+function AuthorityPanel({ authority }: { authority: RoomAuthorityStatus | null }) {
+  const mode = authority?.mode === "magicblock_live" ? "MagicBlock live" : "Local fallback";
+  const combat = authority?.combatAuthority === "magicblock_router" ? "Router" : "Room server";
+
+  return (
+    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Authority</h2>
+        <span
+          className={`rounded-sm px-2 py-1 text-xs font-medium ${
+            authority?.mode === "magicblock_live"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {mode}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <HudStat label="Movement" value="Room server" />
+        <HudStat label="Combat" value={combat} />
+      </div>
+
+      <div className="mt-3 rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">RaidState</p>
+        <p className="mt-1 break-all font-mono text-xs">
+          {authority?.raidStatePda ?? "--"}
+        </p>
+        {authority?.lastSignature ? (
+          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
+            {truncateAddress(authority.lastSignature, 6)}
+          </p>
+        ) : null}
+      </div>
+
+      {authority?.lastError ? (
+        <p className="mt-3 break-words text-sm font-medium text-destructive">
+          {authority.lastError}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function SettlementPanel({
+  snapshot,
+  settlement,
+  busy,
+  walletsReady,
+  canSubmit,
+  onSubmit
+}: {
+  snapshot: RaidSnapshot | null;
+  settlement: RoomSettlementStatus | null;
+  busy: boolean;
+  walletsReady: boolean;
+  canSubmit: boolean;
+  onSubmit: () => void;
+}) {
+  const terminal =
+    snapshot?.status === "victory" ||
+    snapshot?.status === "defeat" ||
+    snapshot?.status === "timeout" ||
+    snapshot?.status === "settled";
+  const status = settlement?.status ?? (snapshot?.status === "settled" ? "success" : "idle");
+  const statusLabel = formatLabel(status);
+  const disabledReason = !terminal
+    ? "Raid active"
+    : !walletsReady
+      ? "Wallets missing"
+      : snapshot?.status === "settled"
+        ? "Settled"
+        : null;
+
+  return (
+    <section className="rounded-md border border-border bg-card p-4 text-card-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Settlement</h2>
+        <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium capitalize text-muted-foreground">
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <HudStat label="Result" value={formatLabel(settlement?.summary?.result ?? snapshot?.status)} />
+        <HudStat
+          label="Duration"
+          value={`${settlement?.summary?.durationSeconds ?? snapshot?.elapsedSeconds ?? 0}s`}
+        />
+        <HudStat
+          label="Boss HP"
+          value={(settlement?.summary?.bossFinalHp ?? snapshot?.boss.hp ?? 0).toString()}
+        />
+        <HudStat
+          label="Players"
+          value={(settlement?.summary?.contributions.length ?? snapshot?.players.length ?? 0).toString()}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={!canSubmit}
+        aria-busy={busy}
+        className="mt-3 min-h-10 w-full rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground transition-colors hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        {busy ? "Submitting..." : disabledReason ?? "Submit Settlement"}
+      </button>
+
+      {settlement?.transactionSignature ? (
+        <a
+          href={settlement.explorerUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 grid min-h-10 place-items-center rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          Explorer
+        </a>
+      ) : null}
+
+      {settlement?.settlementRecordPda ? (
+        <div className="mt-3 rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">Record</p>
+          <p className="mt-1 break-all font-mono text-xs">{settlement.settlementRecordPda}</p>
+        </div>
+      ) : null}
+
+      {settlement?.message ? (
+        <p
+          className={`mt-3 break-words text-sm font-medium ${
+            settlement.status === "failed" ? "text-destructive" : "text-muted-foreground"
+          }`}
+        >
+          {settlement.message}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function WalletControls({
   wallet,
   walletStatus,
@@ -861,7 +1099,7 @@ function WalletControls({
       {walletError ? (
         <p className="text-sm font-medium text-destructive">{walletError}</p>
       ) : (
-        <p className="text-sm text-muted-foreground">Wallet is optional before settlement.</p>
+        <p className="text-sm text-muted-foreground">Wallet anchors the live devnet roster.</p>
       )}
     </div>
   );
@@ -923,6 +1161,10 @@ function formatLabel(value: string | null | undefined) {
 
 function formatDecisionSource(source: BossStrategyDecision["source"]) {
   return source === "llm" ? "OpenAI" : "fallback";
+}
+
+function truncateMessage(message: string, maxLength = 180) {
+  return message.length <= maxLength ? message : `${message.slice(0, maxLength - 3)}...`;
 }
 
 function generateDemoSolanaAddress() {

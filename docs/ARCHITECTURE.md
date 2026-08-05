@@ -13,12 +13,12 @@ Adaptive AI Raid Boss uses a deliberately small architecture: browser rendering,
 
 ## Current Repository State
 
-As of 2026-08-04:
-- `frontend/` contains the initialized Next.js app scaffold.
-- `programs/raid_settlement/` contains the initialized Anchor settlement skeleton.
+As of 2026-08-05:
+- `frontend/` contains the initialized Next.js app, Phaser room game, wallet UI, AI strategy panel, authority panel, settlement panel, and room API routes.
+- `programs/raid_settlement/` contains the compact per-room MagicBlock `RaidState`, on-chain room roster instructions, finalization instruction, and bounded settlement record instruction.
 - Root `Anchor.toml`, root `Cargo.toml`, and `Cargo.lock` exist.
 - `backend/` is still an empty placeholder.
-- MagicBlock-authoritative raid state, game rules, AI, networking, and final settlement logic are not implemented yet.
+- Per-room MagicBlock PDAs and on-chain live room rosters are implemented on Solana devnet. Production hosted snapshot/session storage is not implemented yet.
 
 This document describes the target MVP architecture. `MB-001` verified the initial MagicBlock and Magic Router path; later implementation must continue to verify installed package APIs before coding against them.
 
@@ -26,11 +26,11 @@ This document describes the target MVP architecture. `MB-001` verified the initi
 
 | Component | Planned location | Responsibility | Authoritative? |
 | --- | --- | --- | --- |
-| Next.js app | `frontend/` | App shell, routing, wallet connection, room UI, analytics panel | No |
+| Next.js app | `frontend/` | App shell, routing, wallet connection, room UI, analytics panel, transient room snapshot cache | No |
 | Phaser client | `frontend/` | 60 FPS rendering, input capture, interpolation, effects | No |
 | Shared game domain | `frontend/src/game` or shared package after scaffold | Types, deterministic rules, Zod schemas, simulation helpers | Partially, when reused by authoritative layer |
-| MagicBlock execution layer | To verify in `MB-001` | Low-latency authoritative raid state and combat transitions | Yes |
-| AI strategy API | `frontend/app/api` or `backend/` after scaffold | Build analytics summary, call LLM, validate structured output | No direct state authority |
+| MagicBlock execution layer | `programs/raid_settlement`, `frontend/src/lib/room-chain.ts`, `frontend/src/lib/magicblock-authority.ts` | Canonical live room roster and low-latency authoritative combat transitions when live authority is enabled | Yes |
+| AI strategy API | `frontend/src/app/api` | Build analytics summary, call LLM, validate structured output | No direct state authority |
 | Solana program | `programs/raid_settlement` | Store final raid result and contribution scores | Yes for settlement record |
 | Demo tooling | `docs/`, `prompts/`, test scripts | Repeatable demo flow and fallback plan | No |
 
@@ -43,8 +43,10 @@ Selected choices:
 - ER validator region: Asia.
 - App routing: Magic Router is the primary frontend RPC path.
 - SDK path: `@solana/web3.js` plus `@magicblock-labs/ephemeral-rollups-sdk@0.16.2`.
-- Delegated account model: one bounded `RaidState` PDA for MVP.
-- Settlement flow: commit and undelegate the same compact `RaidState` PDA at raid end before final settlement display.
+- Delegated account model: one bounded per-room `RaidState` PDA derived from `[raid-state, raid_id]`.
+- Room roster model: live room create/join write wallet/class slots into the on-chain `RaidState`; the Next store caches snapshots and can reconstruct a room from chain by room code.
+- Settlement flow: commit and undelegate the room `RaidState` PDA at raid end before final Solana devnet settlement.
+- Day 6 room split: roster/lifecycle/contribution-critical state is on-chain; room server keeps movement authoritative for low-latency visuals; combat-critical hits route through Magic Router when `MAGICRAID_MAGICBLOCK_AUTHORITY=live`; UI labels live versus fallback mode.
 - Session authorization: use Session Keys for frequent gameplay transactions after basic ER delegation works.
 - AI strategy authority: a server or demo authority wallet submits constrained strategy updates.
 - Gameplay cadence: player movement intents at a low fixed rate, with Phaser interpolation at 60 FPS.
@@ -61,12 +63,19 @@ Verified docs-backed values:
 
 ## Authority Boundaries
 
-Authoritative state:
-- Raid status: lobby, active, victory, defeat, timeout, settled.
-- Boss HP, phase, current strategy, attack cooldowns.
-- Player HP, class, position snapshot, cooldowns, alive status.
-- Contribution counters.
-- Raid timer and terminal result.
+On-chain authoritative live state:
+- Room roster wallets/classes.
+- Raid lifecycle: active, victory, defeat, or timeout.
+- Boss HP and max HP.
+- Current boss strategy.
+- Player count and contribution damage.
+- Elapsed seconds used for MagicBlock/settlement validation.
+
+Room-server authoritative cached state:
+- High-frequency player positions and facing.
+- Player HP, cooldowns, alive/downed status, boss attack cooldowns, and active attack effects.
+- Display names, local session ids, analytics history, and UI convenience state.
+- Reconstructed snapshots derived from the on-chain roster plus local movement/visual state.
 
 Visual-only state:
 - Camera movement.
@@ -92,17 +101,17 @@ The LLM must not control:
 ## Raid Lifecycle
 
 1. Create raid room.
-2. Players join with room code.
-3. Players choose class and connect wallet.
-4. Raid starts when the host begins or minimum player count is met.
+2. In live/on-chain mode, initialize the per-room `RaidState` with the host wallet/class.
+3. Players join with room code; live/on-chain joins call `join_raid` to append wallet/class slots before combat starts.
+4. Players choose class and connect wallet.
 5. Clients send player inputs.
-6. MagicBlock-authoritative state advances on fixed authoritative ticks.
+6. The room server advances movement and visual snapshots; combat-critical hits delegate the per-room `RaidState` on demand and reconcile with MagicBlock readbacks when live authority is enabled.
 7. Phaser clients render snapshots and interpolate locally.
 8. Analytics summarizes recent team behaviour.
 9. AI strategy API returns a validated strategy enum.
 10. Authoritative rules accept or ignore the strategy based on cooldowns and phase.
 11. Raid ends in victory, defeat, or timeout.
-12. Final result and contribution scores are submitted to Solana.
+12. Final result and contribution scores are submitted to Solana through `settle_raid`; the program validates terminal status, roster wallets, and damage contributions against `RaidState`.
 13. UI displays settlement status and result.
 
 ## Boss Strategy Enum
@@ -167,10 +176,11 @@ The summary is data for strategy selection, not authority over state.
 
 ## Solana Settlement Model
 
-The Solana program should store the smallest useful final result:
+The Solana program should store the smallest useful live room and final result data:
 
 - Raid identifier.
 - Authority or creator.
+- Room roster wallets/classes.
 - Result: victory, defeat, or timeout.
 - Duration.
 - Boss final HP.
@@ -178,6 +188,13 @@ The Solana program should store the smallest useful final result:
 - Settled timestamp or slot if available.
 
 The Solana program does not need to replay every combat tick for the MVP. It records the final verifiable result produced by the authoritative raid flow.
+
+Day 6 implementation:
+- `RaidState` stores compact MagicBlock-authoritative room roster wallets/classes, lifecycle, boss HP, elapsed seconds, strategy, player count, and contribution damage.
+- `RaidState` PDA seeds are `[raid-state, raid_id]`; room gameplay derives `raid_id` from `magicraid:${ROOM_CODE}`.
+- `initialize_raid` creates roster slot 0; `join_raid` appends player wallets/classes before combat starts.
+- `SettlementRecord` PDA uses seed `settlement-record` plus the `RaidState` PDA.
+- `settle_raid` rejects non-terminal raids, duplicate settlement, invalid signer, mismatched result/duration/boss HP, invalid player count, score-bound violations, default or mismatched player wallets, and contribution damage that does not match `RaidState`.
 
 ## Remaining MagicBlock Checks
 

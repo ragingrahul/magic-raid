@@ -32,42 +32,63 @@ const RAID_SETTLEMENT_PROGRAM_ID = new PublicKey(
   "2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72"
 );
 const RAID_STATE_SEED = "raid-state";
+const SETTLEMENT_RECORD_SEED = "settlement-record";
+const RAID_BOSS_MAX_HP = 1_200;
+const MAX_HIT_DAMAGE = 250;
+const PLAYER_COUNT = 1;
+
 const RAID_STATE_DISCRIMINATOR = Buffer.from([165, 3, 135, 214, 253, 242, 9, 61]);
 const RAID_STATE_MIN_BYTES = 346;
-const raidId = randomBytes(16);
+const SETTLEMENT_RECORD_DISCRIMINATOR = Buffer.from([
+  172, 159, 67, 74, 96, 85, 37, 205
+]);
 
 const DISCRIMINATORS = {
   initializeRaid: Buffer.from([65, 9, 122, 58, 90, 95, 56, 90]),
-  joinRaid: Buffer.from([254, 133, 239, 75, 116, 28, 122, 208]),
   delegateRaid: Buffer.from([174, 195, 73, 226, 108, 195, 141, 39]),
   applyPlayerHit: Buffer.from([84, 105, 136, 224, 243, 30, 205, 71]),
-  commitAndUndelegateRaid: Buffer.from([210, 80, 139, 197, 32, 249, 30, 199])
+  commitAndUndelegateRaid: Buffer.from([210, 80, 139, 197, 32, 249, 30, 199]),
+  settleRaid: Buffer.from([29, 86, 124, 165, 207, 146, 238, 155])
 };
 
+const raidId = randomBytes(16);
 const [raidStatePda, raidStateBump] = PublicKey.findProgramAddressSync(
   [new TextEncoder().encode(RAID_STATE_SEED), raidId],
+  RAID_SETTLEMENT_PROGRAM_ID
+);
+const [settlementRecordPda, settlementRecordBump] = PublicKey.findProgramAddressSync(
+  [new TextEncoder().encode(SETTLEMENT_RECORD_SEED), raidStatePda.toBuffer()],
   RAID_SETTLEMENT_PROGRAM_ID
 );
 const asiaValidator = new PublicKey(MAGICBLOCK_DEVNET.asiaValidator);
 const baseConnection = new Connection(MAGICBLOCK_DEVNET.solanaDevnetRpc, "confirmed");
 const routerConnection = new ConnectionMagicRouter(MAGICBLOCK_DEVNET.routerRpc, "confirmed");
 
-function keypairPath() {
-  const configuredPath =
+function configuredKeypairSource() {
+  return (
     process.env.MAGICRAID_MAGICBLOCK_KEYPAIR ??
     process.env.MAGICRAID_SETTLEMENT_KEYPAIR ??
     process.env.SOLANA_KEYPAIR ??
-    "~/.config/solana/id.json";
-  if (configuredPath.startsWith("~/")) {
-    return resolve(homedir(), configuredPath.slice(2));
+    "~/.config/solana/id.json"
+  );
+}
+
+function resolveKeypairPath(source) {
+  if (source.startsWith("~/")) {
+    return resolve(homedir(), source.slice(2));
   }
-  return resolve(configuredPath);
+  return resolve(source);
 }
 
 function loadAuthority() {
-  const path = keypairPath();
+  const source = configuredKeypairSource();
+  if (source.trim().startsWith("[")) {
+    return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(source)));
+  }
+
+  const path = resolveKeypairPath(source);
   if (!existsSync(path)) {
-    throw new Error(`Missing keypair at ${path}. Set SOLANA_KEYPAIR to a funded devnet keypair.`);
+    throw new Error(`Missing keypair at ${path}. Set MAGICRAID_MAGICBLOCK_KEYPAIR to a funded devnet keypair.`);
   }
 
   const secret = JSON.parse(readFileSync(path, "utf8"));
@@ -80,7 +101,13 @@ function u16le(value) {
   return buffer;
 }
 
-function initializeRaidInstruction(authority, raidId, firstPlayer, playerClassIndex = 0) {
+function u32le(value) {
+  const buffer = Buffer.alloc(4);
+  buffer.writeUInt32LE(value, 0);
+  return buffer;
+}
+
+function initializeRaidInstruction(authority) {
   return new TransactionInstruction({
     programId: RAID_SETTLEMENT_PROGRAM_ID,
     keys: [
@@ -91,28 +118,13 @@ function initializeRaidInstruction(authority, raidId, firstPlayer, playerClassIn
     data: Buffer.concat([
       DISCRIMINATORS.initializeRaid,
       raidId,
-      firstPlayer.toBuffer(),
-      Buffer.from([playerClassIndex])
+      authority.toBuffer(),
+      Buffer.from([0])
     ])
   });
 }
 
-function joinRaidInstruction(authority, player, playerClassIndex = 0) {
-  return new TransactionInstruction({
-    programId: RAID_SETTLEMENT_PROGRAM_ID,
-    keys: [
-      { pubkey: raidStatePda, isSigner: false, isWritable: true },
-      { pubkey: authority, isSigner: true, isWritable: true }
-    ],
-    data: Buffer.concat([
-      DISCRIMINATORS.joinRaid,
-      player.toBuffer(),
-      Buffer.from([playerClassIndex])
-    ])
-  });
-}
-
-function delegateRaidInstruction(authority, raidId) {
+function delegateRaidInstruction(authority) {
   return new TransactionInstruction({
     programId: RAID_SETTLEMENT_PROGRAM_ID,
     keys: [
@@ -145,7 +157,7 @@ function delegateRaidInstruction(authority, raidId) {
   });
 }
 
-function applyPlayerHitInstruction(authority) {
+function applyPlayerHitInstruction(authority, damage, elapsedDeltaSeconds) {
   return new TransactionInstruction({
     programId: RAID_SETTLEMENT_PROGRAM_ID,
     keys: [
@@ -155,8 +167,8 @@ function applyPlayerHitInstruction(authority) {
     data: Buffer.concat([
       DISCRIMINATORS.applyPlayerHit,
       Buffer.from([0]),
-      u16le(1),
-      u16le(0)
+      u16le(damage),
+      u16le(elapsedDeltaSeconds)
     ])
   });
 }
@@ -171,6 +183,30 @@ function commitAndUndelegateRaidInstruction(authority) {
       { pubkey: MAGIC_PROGRAM_ID, isSigner: false, isWritable: false }
     ],
     data: DISCRIMINATORS.commitAndUndelegateRaid
+  });
+}
+
+function settleRaidInstruction(authority, finalState) {
+  return new TransactionInstruction({
+    programId: RAID_SETTLEMENT_PROGRAM_ID,
+    keys: [
+      { pubkey: raidStatePda, isSigner: false, isWritable: true },
+      { pubkey: settlementRecordPda, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
+    ],
+    data: Buffer.concat([
+      DISCRIMINATORS.settleRaid,
+      Buffer.from([0]),
+      u16le(finalState.elapsedSeconds),
+      u16le(finalState.bossHp),
+      u32le(PLAYER_COUNT),
+      authority.toBuffer(),
+      u16le(finalState.contributionDamage[0]),
+      u16le(0),
+      u16le(1_000),
+      u16le(1_000)
+    ])
   });
 }
 
@@ -204,7 +240,7 @@ function decodeRaidState(accountInfo) {
   }
 
   let offset = 8;
-  const raidId = data.subarray(offset, offset + 16).toString("hex");
+  const decodedRaidId = data.subarray(offset, offset + 16).toString("hex");
   offset += 16;
   const authority = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
   offset += 32;
@@ -243,7 +279,7 @@ function decodeRaidState(accountInfo) {
 
   return {
     owner: accountInfo.owner.toBase58(),
-    raidId,
+    raidId: decodedRaidId,
     authority,
     lifecycle,
     bossHp,
@@ -258,36 +294,88 @@ function decodeRaidState(accountInfo) {
   };
 }
 
+function decodeSettlementRecord(accountInfo) {
+  if (!accountInfo) {
+    return null;
+  }
+  const data = accountInfo.data;
+  if (!data.subarray(0, 8).equals(SETTLEMENT_RECORD_DISCRIMINATOR)) {
+    return { raw: true, owner: accountInfo.owner.toBase58(), dataLength: data.length };
+  }
+
+  let offset = 8;
+  const decodedRaidId = data.subarray(offset, offset + 16).toString("hex");
+  offset += 16;
+  const authority = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+  const result = ["victory", "defeat", "timeout"][data[offset++]] ?? "unknown";
+  const durationSeconds = data.readUInt16LE(offset);
+  offset += 2;
+  const bossFinalHp = data.readUInt16LE(offset);
+  offset += 2;
+  const playerCount = data[offset++];
+  const settledSlot = data.readBigUInt64LE(offset).toString();
+  offset += 8;
+  const settled = data[offset++] === 1;
+  const bump = data[offset++];
+  const contributionCount = data.readUInt32LE(offset);
+  offset += 4;
+  const contributions = [];
+  for (let i = 0; i < contributionCount; i += 1) {
+    const player = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+    offset += 32;
+    const damage = data.readUInt16LE(offset);
+    offset += 2;
+    const support = data.readUInt16LE(offset);
+    offset += 2;
+    const survival = data.readUInt16LE(offset);
+    offset += 2;
+    const objective = data.readUInt16LE(offset);
+    offset += 2;
+    contributions.push({ player, damage, support, survival, objective });
+  }
+
+  return {
+    owner: accountInfo.owner.toBase58(),
+    raidId: decodedRaidId,
+    authority,
+    result,
+    durationSeconds,
+    bossFinalHp,
+    playerCount,
+    settledSlot,
+    settled,
+    bump,
+    contributions
+  };
+}
+
 async function sleep(ms) {
   await new Promise((resolveSleep) => {
     setTimeout(resolveSleep, ms);
   });
 }
 
-async function waitForDelegation(expected, attempts = 30) {
+async function waitForDelegation(expected, attempts = 45) {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const status = await routerConnection.getDelegationStatus(raidStatePda);
     if (status?.isDelegated === expected) {
       return { attempt, status };
     }
-    await sleep(1000);
+    await sleep(1_000);
   }
   throw new Error(`Timed out waiting for isDelegated:${expected}`);
 }
 
 async function main() {
   const authority = loadAuthority();
-  const smokePlayers = [
-    authority.publicKey,
-    Keypair.generate().publicKey,
-    Keypair.generate().publicKey,
-    Keypair.generate().publicKey
-  ];
   const result = {
     programId: RAID_SETTLEMENT_PROGRAM_ID.toBase58(),
+    raidId: raidId.toString("hex"),
     raidStatePda: raidStatePda.toBase58(),
     raidStateBump,
-    raidId: raidId.toString("hex"),
+    settlementRecordPda: settlementRecordPda.toBase58(),
+    settlementRecordBump,
     authority: authority.publicKey.toBase58(),
     expectedAsiaValidator: asiaValidator.toBase58(),
     steps: []
@@ -300,64 +388,41 @@ async function main() {
     }
     result.steps.push({ label: "programDeployed", ok: true });
 
-    const initialDelegationStatus = await routerConnection.getDelegationStatus(raidStatePda);
-    result.steps.push({ label: "initialDelegationStatus", ok: true, value: initialDelegationStatus });
-
-    const initialBaseAccount = await baseConnection.getAccountInfo(raidStatePda);
-    if (!initialBaseAccount && !initialDelegationStatus?.isDelegated) {
-      const initialize = await sendBaseInstruction(
-        "initializeRaid",
-        authority,
-        initializeRaidInstruction(authority.publicKey, raidId, smokePlayers[0], 0)
-      );
-      result.steps.push({ ...initialize, ok: true });
-      for (let playerIndex = 1; playerIndex < smokePlayers.length; playerIndex += 1) {
-        const join = await sendBaseInstruction(
-          `joinRaid${playerIndex + 1}`,
-          authority,
-          joinRaidInstruction(authority.publicKey, smokePlayers[playerIndex], playerIndex % 3)
-        );
-        result.steps.push({ ...join, ok: true });
-      }
-    } else {
-      result.steps.push({
-        label: "initializeRaid",
-        ok: true,
-        skipped: true,
-        reason: "RaidState PDA already exists or is delegated"
-      });
-    }
-
-    let delegationStatus = await routerConnection.getDelegationStatus(raidStatePda);
-    if (!delegationStatus?.isDelegated) {
-      const delegate = await sendBaseInstruction(
-        "delegateRaid",
-        authority,
-        delegateRaidInstruction(authority.publicKey, raidId)
-      );
-      result.steps.push({ ...delegate, ok: true });
-      const delegated = await waitForDelegation(true);
-      result.steps.push({ label: "delegated", ok: true, value: delegated.status });
-    } else {
-      result.steps.push({ label: "delegateRaid", ok: true, skipped: true });
-    }
-
-    const stateBeforeHit = decodeRaidState(await routerConnection.getAccountInfo(raidStatePda));
-    result.steps.push({ label: "stateBeforeHit", ok: true, value: stateBeforeHit });
-
-    if (stateBeforeHit && "lifecycle" in stateBeforeHit && stateBeforeHit.lifecycle !== "active") {
-      throw new Error(`RaidState is terminal (${stateBeforeHit.lifecycle}); cannot apply live hit.`);
-    }
-
-    const hit = await sendRouterInstruction(
-      "applyPlayerHit",
+    const initialize = await sendBaseInstruction(
+      "initializeRaid",
       authority,
-      applyPlayerHitInstruction(authority.publicKey)
+      initializeRaidInstruction(authority.publicKey)
     );
-    result.steps.push({ ...hit, ok: true });
+    result.steps.push({ ...initialize, ok: true });
 
-    const stateAfterHit = decodeRaidState(await routerConnection.getAccountInfo(raidStatePda));
-    result.steps.push({ label: "stateAfterHit", ok: true, value: stateAfterHit });
+    const delegate = await sendBaseInstruction(
+      "delegateRaid",
+      authority,
+      delegateRaidInstruction(authority.publicKey)
+    );
+    result.steps.push({ ...delegate, ok: true });
+    const delegated = await waitForDelegation(true);
+    result.steps.push({ label: "delegated", ok: true, value: delegated.status });
+
+    let state = decodeRaidState(await routerConnection.getAccountInfo(raidStatePda));
+    result.steps.push({ label: "stateBeforeHits", ok: true, value: state });
+
+    for (let hitIndex = 1; hitIndex <= Math.ceil(RAID_BOSS_MAX_HP / MAX_HIT_DAMAGE); hitIndex += 1) {
+      if (!state || state.lifecycle !== "active") {
+        break;
+      }
+      const hit = await sendRouterInstruction(
+        `applyPlayerHit${hitIndex}`,
+        authority,
+        applyPlayerHitInstruction(authority.publicKey, MAX_HIT_DAMAGE, 1)
+      );
+      state = decodeRaidState(await routerConnection.getAccountInfo(raidStatePda));
+      result.steps.push({ ...hit, ok: true, value: state });
+    }
+
+    if (!state || state.lifecycle !== "victory" || state.bossHp !== 0) {
+      throw new Error("Live MagicBlock hits did not produce a terminal victory RaidState.");
+    }
 
     const commit = await sendRouterInstruction(
       "commitAndUndelegateRaid",
@@ -366,11 +431,39 @@ async function main() {
     );
     result.steps.push({ ...commit, ok: true });
 
-    const undelegated = await waitForDelegation(false, 45);
+    const undelegated = await waitForDelegation(false);
     result.steps.push({ label: "undelegated", ok: true, value: undelegated.status });
 
     const finalState = decodeRaidState(await baseConnection.getAccountInfo(raidStatePda));
     result.steps.push({ label: "finalDevnetState", ok: true, value: finalState });
+    if (
+      !finalState ||
+      finalState.lifecycle !== "victory" ||
+      finalState.bossHp !== 0 ||
+      finalState.contributionDamage[0] !== RAID_BOSS_MAX_HP
+    ) {
+      throw new Error("Base devnet RaidState readback does not match the MagicBlock victory.");
+    }
+
+    const settle = await sendBaseInstruction(
+      "settleRaid",
+      authority,
+      settleRaidInstruction(authority.publicKey, finalState)
+    );
+    result.steps.push({ ...settle, ok: true });
+
+    const settlementRecord = decodeSettlementRecord(
+      await baseConnection.getAccountInfo(settlementRecordPda)
+    );
+    result.steps.push({ label: "settlementRecord", ok: true, value: settlementRecord });
+    if (
+      !settlementRecord ||
+      settlementRecord.result !== "victory" ||
+      !settlementRecord.settled ||
+      settlementRecord.contributions[0]?.damage !== RAID_BOSS_MAX_HP
+    ) {
+      throw new Error("Settlement record readback does not match the committed victory.");
+    }
 
     console.log(JSON.stringify({ ok: true, ...result }, null, 2));
   } catch (error) {

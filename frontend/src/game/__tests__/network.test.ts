@@ -8,8 +8,11 @@ import {
 import {
   adaptRoomStrategy,
   applyRoomInput,
+  applyRoomInputWithCriticalAuthority,
+  createRoomSettlementSummary,
   createRoomAuthority,
   joinRoomAuthority,
+  markRoomSettlement,
   recoverRoomAuthority,
   RoomAuthorityError,
   updateRoomProfile
@@ -25,6 +28,9 @@ const guestProfile = {
   playerClass: "ranger" as const
 };
 
+const hostWallet = "11111111111111111111111111111112";
+const guestWallet = "11111111111111111111111111111113";
+
 describe("NET-001 room snapshots", () => {
   it("creates a room code and lets another player join the same raid", () => {
     const room = createRoomAuthority(hostProfile, {
@@ -39,6 +45,36 @@ describe("NET-001 room snapshots", () => {
     expect(guest.snapshot.raidId).toBe(host.snapshot.raidId);
     expect(guest.snapshot.players).toHaveLength(2);
     expect(guest.snapshot.boss.hp).toBe(host.snapshot.boss.hp);
+  });
+
+  it("allows live devnet roster joins before combat damage starts", () => {
+    const room = createRoomAuthority(
+      {
+        ...hostProfile,
+        wallet: hostWallet
+      },
+      {
+        roomCode: "LIVEJN",
+        nowUnixMs: 10_000
+      }
+    );
+    room.authority = {
+      ...room.authority,
+      mode: "magicblock_live",
+      combatAuthority: "magicblock_router"
+    };
+
+    const guest = joinRoomAuthority(
+      room,
+      {
+        ...guestProfile,
+        wallet: guestWallet
+      },
+      15_000
+    );
+
+    expect(guest.snapshot.players).toHaveLength(2);
+    expect(guest.authority?.mode).toBe("magicblock_live");
   });
 
   it("validates client input before authoritative processing", () => {
@@ -109,6 +145,51 @@ describe("NET-001 room snapshots", () => {
     applyRoomInput(room, input, 30_100);
 
     expect(() => applyRoomInput(room, input, 30_200)).toThrow(RoomAuthorityError);
+  });
+
+  it("reconciles combat-critical attacks from a MagicBlock authority readback", async () => {
+    const room = createRoomAuthority(hostProfile, {
+      roomCode: "MBLIVE",
+      nowUnixMs: 60_000
+    });
+    const playerId = room.snapshot.players[0].id;
+    room.snapshot.players[0].position = {
+      x: room.snapshot.boss.position.x - 80,
+      y: room.snapshot.boss.position.y
+    };
+
+    const snapshot = await applyRoomInputWithCriticalAuthority(
+      room,
+      {
+        type: "player_attack",
+        raidId: room.snapshot.raidId,
+        playerId,
+        attack: "normal",
+        target: {
+          targetType: "boss"
+        },
+        clientSequence: 1,
+        clientTimeMs: 0
+      },
+      60_120,
+      {
+        applyPlayerHit: async (mutation) => ({
+          mode: "magicblock_live",
+          raidStatePda: room.authority.raidStatePda,
+          transactionSignature:
+            "5f6yXkC8qvMEJteREMsSDBqTNBR9yiU1Kw9h2XKkG9FqHcUsgQmXMS2xoT7WhGoYjZkEJpYkMc3PzKxXzYz3mVUp",
+          lifecycle: "active",
+          bossHp: 1_100,
+          elapsedSeconds: mutation.elapsedDeltaSeconds,
+          contributionDamage: [100]
+        })
+      }
+    );
+
+    expect(snapshot.boss.hp).toBe(1_100);
+    expect(snapshot.players[0].contribution.damage).toBe(100);
+    expect(room.authority.mode).toBe("magicblock_live");
+    expect(room.authority.combatAuthority).toBe("magicblock_router");
   });
 });
 
@@ -227,5 +308,85 @@ describe("NET-002 reconnect recovery", () => {
     });
 
     expect(cleared.snapshot.players[0].wallet).toBeUndefined();
+  });
+});
+
+describe("SOL-003 room settlement summaries", () => {
+  it("builds a bounded settlement summary from a terminal room", () => {
+    const room = createRoomAuthority(
+      {
+        ...hostProfile,
+        wallet: hostWallet
+      },
+      {
+        roomCode: "SETTLE",
+        nowUnixMs: 70_000
+      }
+    );
+    joinRoomAuthority(
+      room,
+      {
+        ...guestProfile,
+        wallet: guestWallet
+      },
+      70_100
+    );
+    room.snapshot.status = "victory";
+    room.snapshot.boss.hp = 0;
+    room.snapshot.elapsedSeconds = 88;
+
+    const summary = createRoomSettlementSummary(
+      room,
+      room.snapshot.players[0].id,
+      hostWallet
+    );
+
+    expect(summary.result).toBe("victory");
+    expect(summary.contributions).toHaveLength(2);
+    expect(summary.contributions[0].wallet).toBe(hostWallet);
+  });
+
+  it("rejects settlement before terminal status or missing wallets", () => {
+    const room = createRoomAuthority(hostProfile, {
+      roomCode: "NOWALT",
+      nowUnixMs: 80_000
+    });
+
+    expect(() =>
+      createRoomSettlementSummary(room, room.snapshot.players[0].id, hostWallet)
+    ).toThrow(RoomAuthorityError);
+
+    room.snapshot.status = "timeout";
+    room.snapshot.elapsedSeconds = GAME_LIMITS.raid.durationSeconds;
+
+    expect(() =>
+      createRoomSettlementSummary(room, room.snapshot.players[0].id, hostWallet)
+    ).toThrow(RoomAuthorityError);
+  });
+
+  it("marks a terminal room settled after a successful submission", () => {
+    const room = createRoomAuthority(
+      {
+        ...hostProfile,
+        wallet: hostWallet
+      },
+      {
+        roomCode: "DONE88",
+        nowUnixMs: 90_000
+      }
+    );
+    room.snapshot.status = "timeout";
+    room.snapshot.elapsedSeconds = GAME_LIMITS.raid.durationSeconds;
+    const summary = createRoomSettlementSummary(room, room.snapshot.players[0].id, hostWallet);
+
+    const settlement = markRoomSettlement(room, {
+      status: "local_verified",
+      summary,
+      settlementRecordPda: room.authority.settlementRecordPda,
+      message: "Local settlement summary verified."
+    });
+
+    expect(settlement.status).toBe("local_verified");
+    expect(room.snapshot.status).toBe("settled");
   });
 });

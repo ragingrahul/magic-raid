@@ -30,7 +30,7 @@ export async function GET(request: Request, context: RoomRouteContext) {
       );
     }
 
-    const room = getRoomOrThrow(roomCode.toUpperCase());
+    const room = await getRoomOrThrow(roomCode.toUpperCase());
     return NextResponse.json(recoverRoomAuthority(room, playerId));
   } catch (error) {
     return roomErrorResponse(error);

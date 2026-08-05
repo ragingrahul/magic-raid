@@ -2,20 +2,20 @@
 
 Adaptive AI Raid Boss is a browser-based, real-time, cooperative raid game for a one-week MagicBlock Blitz hackathon.
 
-2-8 players fight one shared boss in a top-down 2D arena. MagicBlock Ephemeral Rollups provide the low-latency authoritative execution layer for combat state. A constrained AI strategist periodically analyzes team behaviour and selects one approved counter-strategy. Solana stores the final verifiable raid result and contribution scores.
+2-8 players fight one shared boss in a top-down 2D arena. MagicBlock Ephemeral Rollups provide the low-latency authoritative execution layer for combat state. A constrained AI strategist periodically analyzes team behaviour and selects one approved counter-strategy. Solana stores the live room roster plus the final verifiable raid result and contribution scores.
 
 ## Repository Assessment
 
-Assessment date: 2026-08-04.
+Assessment date: 2026-08-05.
 
 Current repository state:
 - `docs/` exists and contains planning documents.
 - `prompts/` exists and contains specialist agent prompt files.
-- `frontend/` contains the Next.js, TypeScript, Tailwind CSS, Phaser 3 probe, Zod, Vitest, and ESLint scaffold.
-- `Anchor.toml`, root `Cargo.toml`, and `programs/raid_settlement/` contain the Anchor settlement skeleton.
+- `frontend/` contains the Next.js, TypeScript, Tailwind CSS, Phaser 3 room game, wallet UI, analytics/AI panel, authority panel, settlement panel/API route, Zod, Vitest, and ESLint scaffold.
+- `Anchor.toml`, root `Cargo.toml`, and `programs/raid_settlement/` contain the Anchor per-room MagicBlock `RaidState` and bounded settlement program.
 - `backend/` is still an empty placeholder.
 
-Implication: the next coding tasks are expanding shared game schemas and proving one MagicBlock-authoritative state transition. MagicBlock API details must continue to be verified from official documentation before implementation.
+Implication: live devnet room roster, combat, and settlement are now available in this workspace; the next coding tasks are Day 7 demo hardening, fallback rehearsal, and any polish needed to make the MagicBlock, AI, and settlement proof points obvious.
 
 ## Core Concept
 
@@ -144,10 +144,11 @@ The hackathon demo is successful when:
 
 ## Immediate Next Task
 
-`MB-001`, `MB-002`, `MB-003`, `MB-004`, `APP-001`, `QA-001`, `SOL-001`, and `GAME-001` through `GAME-004` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
+`MB-001` through `MB-004`, `APP-001`, `GAME-001` through `GAME-005`, `NET-001` through `NET-003`, `WEB-001` through `WEB-003`, `AI-001` through `AI-003`, `SOL-001` through `SOL-003`, and `QA-001` through `QA-004` are complete; see `docs/MAGICBLOCK_VERIFICATION.md` and `docs/PROGRESS.md`.
 
 Next begin:
-- `GAME-005`: finish contribution scoring and terminal-state polish.
-- `NET-001`: consume the completed MagicBlock-authoritative `RaidState` PDA path from the local arena contract.
+- `DEMO-001`: write and rehearse the judging script.
+- `DEMO-002`: rehearse fallback paths for MagicBlock, AI, wallet, and settlement issues.
+- `POLISH-001`: improve visible adaptation and reduce demo confusion.
 
 Toolchain note: in this Codex environment, run package manager, Rust, Solana, and Anchor commands through `zsh -lic`. Run Rust and Anchor verification with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.

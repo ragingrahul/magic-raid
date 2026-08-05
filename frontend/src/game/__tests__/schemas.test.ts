@@ -5,7 +5,8 @@ import {
   MAGICBLOCK_DEVNET,
   RAID_SETTLEMENT_PROGRAM_ID,
   RAID_STATE_RULES,
-  RAID_STATE_SEED
+  RAID_STATE_SEED,
+  roomCodeToRaidId
 } from "@/lib/magicblock";
 import {
   BOSS_ATTACK_COOLDOWNS_MS,
@@ -301,8 +302,10 @@ describe("shared game schemas", () => {
   });
 
   it("derives the compact RaidState PDA used by the MagicBlock spike", () => {
-    const [raidStatePda, bump] = deriveRaidStatePda();
-    const [secondDerivation] = deriveRaidStatePda(RAID_SETTLEMENT_PROGRAM_ID);
+    const raidId = roomCodeToRaidId("LIVE42");
+    const [raidStatePda, bump] = deriveRaidStatePda(raidId);
+    const [secondDerivation] = deriveRaidStatePda(raidId, RAID_SETTLEMENT_PROGRAM_ID);
+    const [differentRoom] = deriveRaidStatePda(roomCodeToRaidId("LIVE43"));
 
     expect(RAID_STATE_SEED).toBe("raid-state");
     expect(RAID_STATE_RULES).toMatchObject({
@@ -335,6 +338,7 @@ describe("shared game schemas", () => {
       GAME_LIMITS.attacks.maxCooldownMs
     );
     expect(raidStatePda.toBase58()).toBe(secondDerivation.toBase58());
+    expect(raidStatePda.toBase58()).not.toBe(differentRoom.toBase58());
     expect(raidStatePda.toBase58()).not.toBe(RAID_SETTLEMENT_PROGRAM_ID.toBase58());
     expect(bump).toBeGreaterThanOrEqual(0);
     expect(bump).toBeLessThanOrEqual(255);

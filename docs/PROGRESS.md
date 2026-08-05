@@ -9,16 +9,14 @@ Date: 2026-08-05.
 Repository contents:
 - `docs/`: planning documents.
 - `prompts/`: specialist agent prompts.
-- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 snapshot-driven raid arena, room API routes, wallet UI, analytics and AI strategy panel, Zod schemas, Vitest, and ESLint.
+- `frontend/`: Next.js App Router scaffold with TypeScript, Tailwind CSS, Phaser 3 snapshot-driven raid arena, room API routes, wallet UI, analytics and AI strategy panel, MagicBlock authority mode panel, settlement panel/API route, Zod schemas, Vitest, and ESLint.
 - `Anchor.toml` and `Cargo.toml`: Anchor/Rust workspace scaffold.
-- `programs/raid_settlement/`: Anchor settlement program skeleton.
+- `programs/raid_settlement/`: Anchor settlement program with compact per-room MagicBlock `RaidState`, on-chain room roster instructions, terminal finalization, and bounded settlement record instruction.
 
 Missing:
-- No final raid-result settlement instruction beyond the `SOL-001` skeleton.
-- No final settlement UI yet.
-- No production room backend beyond the in-memory Next route authority used for the Day 4 demo.
+- No production hosted room backend yet. In live/on-chain mode, the room roster, classes, lifecycle, boss HP, elapsed seconds, strategy, and contribution damage are canonical in the on-chain `RaidState`; the in-memory Next room store remains a cache for reconstructed snapshots, display names, high-frequency movement, cooldown interpolation, analytics, and UI state.
 
-Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-005` local gameplay, Day 4 room sync/wallet UI, and Day 5 AI adaptation pass. Final settlement, MagicBlock-routed room authority, and production room hosting remain ahead.
+Assessment: baseline frontend, Solana scaffold, the `MB-002` MagicBlock-authoritative `RaidState` spike, the `MB-004` live devnet lifecycle smoke, `GAME-001` shared game contracts, `GAME-002` through `GAME-005` local gameplay, Day 4 room sync/wallet UI, Day 5 AI adaptation, Day 6 settlement/authority hardening, per-room MagicBlock `RaidState` PDA allocation, on-chain room roster storage, and live devnet room combat routing are implemented and verified. Production room hosting and Day 7 demo hardening remain ahead.
 
 ## Task Status
 
@@ -46,8 +44,13 @@ Assessment: frontend and Anchor scaffolds exist. Baseline frontend, Solana scaff
 | `WEB-003` | Complete | Sidebar analytics panel shows cluster score, dominant damage type/class, healing frequency, boss phase, current strategy, last AI/fallback decision, and adaptation count during active raids. |
 | `QA-001` | Complete | Baseline frontend `npm run typecheck`, `npm run lint`, and `npm run test` pass. |
 | `SOL-001` | Complete | Anchor settlement workspace scaffolded; `anchor test` and `cargo test` pass with the local Cargo cache convention. |
-| `NET-003` | Not started | Explicit follow-up for routing gameplay-critical room authority through MagicBlock instead of only the in-memory Next room authority. |
-| Remaining settlement, QA, demo tasks | Not started | Await MagicBlock-routed room authority, final settlement flow, broader QA, and demo hardening. |
+| `NET-003` | Complete | Live/on-chain room create and join write the canonical roster to each room's `RaidState` PDA; the room input route uses a live MagicBlock critical-authority adapter when `MAGICRAID_MAGICBLOCK_AUTHORITY=live`, delegates/mutates/commits that PDA on devnet, and reconciles readbacks into room snapshots. Movement remains room-server authoritative for low-latency visuals and the UI shows live versus local fallback mode. |
+| `SOL-002` | Complete | `settle_raid` records bounded final result data and validates signer, terminal status, result match, duration, boss HP, player count, score bounds, duplicate settlement, and contribution damage against `RaidState`. |
+| `SOL-003` | Complete | `POST /api/rooms/[roomCode]/settlement` builds a final room summary, submits a devnet settlement when authority is configured, or returns a local-verified settlement status; the UI shows pending, success, failure, local-verified, signature/explorer, and settlement record states. |
+| `QA-002` | Complete | Full frontend test suite covers deterministic game rules, analytics, AI fallback/schema validation, network authority reconciliation, and settlement instruction encoding. |
+| `QA-003` | Complete | Anchor unit tests cover valid settlement, invalid signer, duplicate settlement, invalid player count, invalid score bounds, invalid terminal status, and contribution-damage mismatch. |
+| `QA-004` | Complete | Browser/API smoke covered create room, authority panel, settlement panel, and desktop/mobile screenshots. |
+| Remaining demo tasks | Not started | Await Day 7 demo script, fallback runbook, and final polish. |
 
 ## Repository Assessment Commands Run
 
@@ -192,7 +195,7 @@ Bootstrap consistency review:
 - Desktop browser smoke: host created room `GJ7SD8`, guest joined by code, host movement plus Strike dropped boss HP to `1176`, and guest observed the same HP/roster. Screenshots: `/tmp/magicraid-day04-host.png` and `/tmp/magicraid-day04-guest.png`.
 - After input submission serialization, repeated the two-page smoke with room `SSSYU9`; no stale-input error was visible while the guest observed the shared HP drop.
 - Mobile browser smoke at `375x900`: create room plus canvas render passed with no horizontal overflow. Screenshot: `/tmp/magicraid-day04-mobile.png`.
-- Current limitation: Day 4 room sync uses an in-memory Next route authority for local demo clients. The MagicBlock `RaidState` lifecycle remains verified by `MB-004`, but routing every gameplay input through MagicBlock is not yet implemented in the room UI.
+- Superseded Day 4 limitation: the original room sync used an in-memory Next route authority for local demo clients. Day 6 now writes live room rosters to on-chain per-room `RaidState` PDAs and routes combat-critical hits through MagicBlock when live authority is enabled; only high-frequency movement/visual snapshot state remains a room-server cache.
 
 ## MagicBlock runbook
 
@@ -206,7 +209,7 @@ Current public devnet configuration:
 - Delegation program: `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`.
 - Raid settlement program: `2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
 - Raid state PDA seed: `raid-state`.
-- Derived `RaidState` PDA for the current program id: `9RBTUMV256FVkNnEBZWrgWYK63YjYbUzWAYvWnjQzeny`, bump `254`.
+- Raid state PDA seeds: `raid-state` plus a 16-byte raid id. Room gameplay derives the raid id from `magicraid:${ROOM_CODE}`; smoke scripts use fresh/random raid ids unless explicitly documented.
 
 Suggested environment variable names if the public constants move out of source later:
 - `NEXT_PUBLIC_MAGICBLOCK_ROUTER_RPC=https://devnet-router.magicblock.app`.
@@ -215,6 +218,8 @@ Suggested environment variable names if the public constants move out of source 
 - `NEXT_PUBLIC_MAGICBLOCK_ER_ASIA_RPC=https://devnet-as.magicblock.app`.
 - `NEXT_PUBLIC_MAGICBLOCK_ER_ASIA_WS=wss://devnet-as.magicblock.app/`.
 - `NEXT_PUBLIC_MAGICBLOCK_ASIA_VALIDATOR=MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`.
+- `MAGICRAID_ROOM_STATE=onchain` explicitly makes room create/join/read use the on-chain `RaidState` roster. `MAGICRAID_MAGICBLOCK_AUTHORITY=live` implies this mode.
+- `MAGICRAID_ROOM_KEYPAIR=/path/to/funded-devnet-keypair.json` can supply the room roster authority. If unset, the room path falls back through `MAGICRAID_MAGICBLOCK_KEYPAIR`, `MAGICRAID_SETTLEMENT_KEYPAIR`, `SOLANA_KEYPAIR`, and `~/.config/solana/id.json`.
 - `NEXT_PUBLIC_RAID_SETTLEMENT_PROGRAM_ID=2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72`.
 
 Setup and verification commands:
@@ -229,7 +234,8 @@ Setup and verification commands:
 - Run `zsh -lic 'npm run lint'` from `frontend/`.
 - Run `zsh -lic 'npm run test'` from `frontend/`.
 - MagicBlock smoke: run `zsh -lic 'npm run magicblock:smoke'` from `frontend/`.
-- Live MagicBlock lifecycle smoke: run `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/`; set `SOLANA_KEYPAIR=/path/to/funded-devnet-keypair.json` to override the default `~/.config/solana/id.json`.
+- Live MagicBlock lifecycle smoke: run `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/`; set `MAGICRAID_MAGICBLOCK_KEYPAIR=/path/to/funded-devnet-keypair.json` to override the default `~/.config/solana/id.json`.
+- Live MagicBlock settlement smoke: run `zsh -lic 'npm run magicblock:settlement-smoke'` from `frontend/`; this creates a fresh per-run `RaidState`, delegates it, reaches victory through Magic Router, commits/undelegates, and writes a Solana devnet `SettlementRecord`.
 
 Expected MagicBlock smoke interpretation:
 - `closestValidator.ok` should be `true` and should resolve to the Asia validator for this project.
@@ -240,17 +246,21 @@ Expected MagicBlock smoke interpretation:
 Program lifecycle for the live devnet path:
 1. Build and deploy the Anchor program to Solana devnet with the generated program id.
 2. Fund the authority wallet.
-3. Initialize the `RaidState` PDA with seed `raid-state`.
-4. Delegate the `RaidState` PDA with `delegate_raid`, passing the Asia validator as the first remaining account.
-5. Send deterministic gameplay mutations, starting with `apply_player_hit`, through Magic Router after delegation.
-6. Use `commit_raid` for mid-raid state sync if the UI or debug panel needs base-layer visibility.
-7. Use `commit_and_undelegate_raid` when the raid reaches victory or timeout.
-8. Read the final account from Solana devnet before final settlement display.
+3. Derive the per-room `RaidState` PDA with seeds `raid-state` plus the 16-byte room raid id.
+4. Initialize the per-room `RaidState` PDA with the host wallet and class in roster slot 0.
+5. Add joining wallets/classes with `join_raid` while the room has not recorded combat damage or terminal state.
+6. Delegate the `RaidState` PDA with `delegate_raid(raid_id)`, passing the Asia validator as the first remaining account.
+7. Send deterministic gameplay mutations, starting with `apply_player_hit`, through Magic Router after delegation.
+8. Use `commit_raid` for mid-raid state sync if the UI or debug panel needs base-layer visibility.
+9. Use `commit_and_undelegate_raid` when the raid reaches victory or timeout.
+10. Read the final account from Solana devnet before final settlement display.
 
 Latest live lifecycle result:
-- Program deploy succeeded on Solana devnet.
-- `initialize_raid`, `delegate_raid`, router-routed `apply_player_hit`, `commit_and_undelegate_raid`, router undelegation check, and final devnet account readback all passed.
-- Because `RaidState` currently uses a single fixed seed, rerunning the live smoke reuses the existing PDA instead of creating a fresh raid account.
+- Program deploy and Day 6 upgrades succeeded on Solana devnet.
+- Latest on-chain roster upgrade signature: `3isDCxHpMzmg9U3CiSqogfyXXr6f47qtkfd9d5wHZi8dxEMgWKBtrbX7qhiwiMTiyjvYJQwjBsnyhQWfat6qWgjb`.
+- The deployed program data account had to be extended by `20480` bytes before the roster upgrade because the new binary exceeded the existing allocation.
+- `initialize_raid(first_player, first_player_class)`, `join_raid(player, player_class)`, `delegate_raid(raid_id)`, router-routed `apply_player_hit`, `commit_and_undelegate_raid`, router undelegation check, and final devnet account readback all passed after the on-chain roster upgrade.
+- Latest live smoke used fresh raid id `2915058d1b1d5909b493da37fee6290d`, `RaidState` PDA `BkW4aqdSvegv9nGauq7SogGhWvUekyHpqTdpNh8JUL7c`, router hit signature `5yzFqh5DyoFWCzg675mrVQnsFpe8xCqFtuLAN9QmrVgmqAFjWQPx7fhUuJCJwzFM5WaXHKQX4787epvHVquMMPTk`, commit/undelegate signature `61GEFtW4QceZ1WXqRn4xefW279LPpyYKETH4kwNSjk2Ai8vEykWezQLiZKKdbmQgHhaACYH4WvN4WHTUfgCHKfw2`, final devnet readback boss HP `1199`, player count `4`, and on-chain roster classes `[warrior, ranger, mage, warrior]`.
 
 Day 5 AI adaptation implementation:
 - Added deterministic terminal scoring for `GAME-005`: contribution totals now include bounded damage, support, survival, and objective components when a raid reaches victory, defeat, or timeout.
@@ -270,17 +280,55 @@ Day 5 verification commands:
 - Browser smoke on existing `http://localhost:3000` passed: creating a room showed the Day 5 `AI Strategy` panel, analytics fields updated, and missing `OPENAI_API_KEY` produced a visible fallback decision instead of breaking the room.
 - Each command emitted the existing zsh startup warnings `not interactive and can't open terminal`, `compinit: initialization aborted`, and `/Users/rahulrajsarma/.bun/_bun:966: command not found: compdef`; the commands still exited successfully.
 
+Day 6 settlement and authority hardening implementation:
+- Added `finalize_raid` to the Anchor program so the authority path can mark defeat or timeout in the compact `RaidState`; victory still requires boss HP to reach zero.
+- Added `settle_raid` and `SettlementRecord` PDA seed `settlement-record` for the final bounded Solana settlement record.
+- Expanded `RaidState` into the canonical live room record: it now stores the room roster wallets/classes, lifecycle, boss HP, elapsed seconds, strategy, player count, and contribution damage in one per-room PDA.
+- `initialize_raid` now records the host wallet/class in roster slot 0, and `join_raid` appends joining wallets/classes before combat starts while rejecting full rosters, duplicate wallets, and post-combat joins.
+- `settle_raid` validates the signer against `RaidState.authority`, rejects non-terminal raids, rejects result/duration/boss HP mismatches, prevents duplicate settlement, enforces player count, rejects score-bound violations, rejects default player pubkeys, requires settlement player wallets to match the on-chain roster, and requires contribution damage to match the MagicBlock-authoritative `RaidState.contribution_damage`.
+- Added frontend settlement instruction encoding in `frontend/src/lib/settlement.ts` using direct `@solana/web3.js` transaction instructions; no Anchor client dependency was added.
+- Added server settlement submitter in `frontend/src/lib/settlement-server.ts`; `MAGICRAID_SETTLEMENT_MODE=local` returns an explicit local-verified rehearsal state, otherwise the server uses `MAGICRAID_SETTLEMENT_KEYPAIR`, `SOLANA_KEYPAIR`, or `~/.config/solana/id.json` to submit to Solana devnet.
+- Added `POST /api/rooms/[roomCode]/settlement` and the `Settlement` sidebar panel with pending, success, failure, local-verified, explorer, and settlement-record states.
+- Added `Authority` sidebar panel and room response metadata for `magicblock_live` versus `local_fallback`.
+- Added optional live combat routing through `frontend/src/lib/magicblock-authority.ts`, gated by `MAGICRAID_MAGICBLOCK_AUTHORITY=live`; when enabled, player attack mutations route through Magic Router and readbacks reconcile boss HP, lifecycle, elapsed seconds, and contribution damage into the room snapshot.
+- Upgraded the Anchor `RaidState` PDA model from one fixed seed to per-room seeds `[raid-state, raid_id]`; room gameplay derives `raid_id` from `magicraid:${ROOM_CODE}`.
+- Added `frontend/src/lib/room-chain.ts` so live/on-chain room create and join write roster data directly to Solana devnet, and `getRoomOrThrow` can reconstruct a missing in-memory room cache entry from the on-chain `RaidState`.
+- `submitSettlementSummary` now commits and undelegates the room `RaidState` before submitting `settle_raid` to Solana devnet, and settlement transaction building derives the matching per-room `SettlementRecord` PDA.
+- The accepted Day 6 authority split is: roster/lifecycle/contribution-critical state is on-chain in the per-room `RaidState`; movement remains room-server authoritative for low-latency Phaser interpolation; combat-critical hit damage is MagicBlock-routed when live authority is enabled; terminal summary settlement validates against the per-room MagicBlock `RaidState`; the UI visibly labels local fallback when live authority is not enabled.
+- Added environment knobs to `frontend/.env.example` and `frontend/README.md`: `MAGICRAID_ROOM_STATE`, `MAGICRAID_ROOM_KEYPAIR`, `MAGICRAID_MAGICBLOCK_AUTHORITY`, `MAGICRAID_MAGICBLOCK_KEYPAIR`, `MAGICRAID_SETTLEMENT_MODE`, and `MAGICRAID_SETTLEMENT_KEYPAIR`.
+
+Day 6 verification, run on 2026-08-05:
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo fmt --all --check'`: passed.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" cargo test'`: passed; 21 Rust tests passed.
+- `zsh -lic 'CARGO_HOME="$PWD/.cargo-home" anchor test'`: passed; SBF build completed and 21 Rust tests passed.
+- `zsh -lic 'npm run test -- settlement'` from `frontend/`: passed; 1 test file and 2 tests passed.
+- `zsh -lic 'npm run test -- network'` from `frontend/`: passed; 1 test file and 11 tests passed.
+- `zsh -lic 'npm run test'` from `frontend/`: passed; 9 test files and 49 tests passed.
+- `zsh -lic 'npm run typecheck'` from `frontend/`: passed.
+- `zsh -lic 'npm run lint'` from `frontend/`: passed.
+- `zsh -lic 'npm run build'` from `frontend/`: passed; production build includes `/api/rooms/[roomCode]/settlement`.
+- First per-room devnet upgrade attempt failed because the live ProgramData allocation was `407392` bytes and the new binary was `410288` bytes; `zsh -lic 'solana program extend 2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72 10240 --url devnet'` passed, then the upgrade passed with deploy signature `4UkVQ6SuLoCVedQS7ErvgUJNzPR5EJokpa3JK2GhUJHc98SYvNveoKhRWu1Bq1QDqbm4yUL3JEt4s5CxrwukeWP5`.
+- On-chain roster upgrade required a second ProgramData extension because the SBF binary grew to `428592` bytes; `zsh -lic 'solana program extend 2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72 20480 --url devnet'` passed, then `anchor deploy --provider.cluster devnet` passed with upgrade signature `3isDCxHpMzmg9U3CiSqogfyXXr6f47qtkfd9d5wHZi8dxEMgWKBtrbX7qhiwiMTiyjvYJQwjBsnyhQWfat6qWgjb`.
+- `zsh -lic 'npm run magicblock:smoke'` from `frontend/`: passed; Magic Router resolved the Asia validator, the smoke `RaidState` was undelegated, Solana devnet returned core `4.2.0-rc.0`, and ER Asia returned MagicBlock core `0.13.19`.
+- `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/`: passed after the on-chain roster upgrade; fresh `RaidState` PDA `BkW4aqdSvegv9nGauq7SogGhWvUekyHpqTdpNh8JUL7c` initialized host slot 0, joined three more roster wallets/classes, delegated, accepted a router-routed hit, committed/undelegated, and read back from devnet with boss HP `1199`, player count `4`, and player 0 contribution damage `1`.
+- `zsh -lic 'npm run magicblock:settlement-smoke'` from `frontend/`: passed; fresh `RaidState` PDA `3xMwHCbt9T4ZatRtKWFom4DYfSP8hC2o22BsGMLVp3hy` reached victory through five Magic Router hits, committed/undelegated with signature `4wtA5zTEfbVSyBMrzusGCJLYkFvkt6ey2id7vsXajGPWLmuxpH77bzoPZb85Bc8Yhy5oTAXNdN4MrbDjmirAyAGs`, submitted `settle_raid` with signature `5cN6pZX7hr5JYoLLegaH4fno4FJ8WTb7K1AseexapSpWDtFYi4rRUAbb7smLAqDFgeCubbjS2HdibHUEWMzLxC3U`, and read back settlement record `AweyYGi7HCZSocsP44qS9rmg7N7XELo9G3iyhvrR6F2h` with result `victory`, boss HP `0`, duration `5`, settled `true`, roster wallet match, and contribution damage `1200`.
+- Live app API smoke against `http://localhost:3000`: create room `VGKZBN`, join wrote a second wallet/class to the on-chain roster, movement stayed room-server authoritative, and attack returned authority metadata with `mode: magicblock_live`, `combatAuthority: magicblock_router`, per-room raid id hex `6d61676963726169643a56474b5a424e`, `RaidState` PDA `EdJfo4vwhtsCr6yqD363GNScC8q7Js2b5iZxcBveswn6`, router signature `2cKn81c5vtAsgyVrTupt8ohugbYAdGHxx9fBfRecqDLLYWrZQbrn5qpi6F3DAPjQ76h8mHPkPE5NMWVgTnUn3tCa`, reconciled boss HP `1176`, and player contributions `[0, 24]`. The smoke PDA was then committed and undelegated with signature `21eDPCiCVyH7wTHRqaiHyYEgCVvn4YUhAXuQiUhRHJEqZfSKwuf9BHcGBzcwr3x39rJaZAE2wNGK7qn2NFvjGW4g`.
+- Two early post-roster-upgrade router mutations returned Anchor `ConstraintSeeds` (`0x7d6`) while the MagicBlock ER validator appeared to still have the previous program cache. A later retry passed, matching the earlier per-room PDA upgrade behavior.
+- Visual smoke used a temporary Playwright install under `/tmp/magicraid-pw` because the in-app Browser tool was not exposed by tool discovery. Desktop screenshot: `/tmp/magicraid-onchain-desktop.png`; mobile screenshot: `/tmp/magicraid-onchain-mobile.png`. Both loaded `http://localhost:3000` under `.env.local`; desktop emitted only Chromium WebGL performance warnings, and mobile had no console or page errors.
+- The known local shell startup warnings appeared on `zsh -lic` commands but did not block successful exits.
+
 ## Immediate Next Step
 
-Continue with `NET-003` MagicBlock-routed room authority, then `SOL-002` and `SOL-003` final settlement. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
+Continue with Day 7 demo hardening: `DEMO-001`, `DEMO-002`, and `POLISH-001`. In this Codex environment, run toolchain commands through `zsh -lic`; run Rust/Anchor commands with `CARGO_HOME="$PWD/.cargo-home"` from the repository root.
 
 User-selected MagicBlock choices:
 - Demo target: MagicBlock public devnet.
 - ER validator region: Asia.
 - RPC routing: Magic Router as primary app connection.
 - SDK path: `@solana/web3.js` plus `@magicblock-labs/ephemeral-rollups-sdk` unless package verification changes this.
-- Delegation model: one compact `RaidState` PDA.
-- Raid-end flow: commit and undelegate the same `RaidState` PDA.
+- Delegation model: one compact per-room `RaidState` PDA derived from the room raid id.
+- Room data model: roster wallets/classes, lifecycle, boss HP, elapsed seconds, strategy, and contribution damage are canonical in the on-chain `RaidState`; the Next room store is a cache for display names, movement/interpolation, analytics, and UI/session convenience.
+- Raid-end flow: commit and undelegate the room `RaidState` PDA before Solana devnet settlement.
 - Session Keys: include for frequent gameplay transactions if the verified path supports them.
 - AI strategy submitter: server or demo authority wallet.
 - Movement cadence: low-rate movement intents, Phaser interpolation at 60 FPS.

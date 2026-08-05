@@ -120,6 +120,28 @@ export const SolanaAddressSchema = z
   .trim()
   .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 
+export const RoomAuthorityModeSchema = z.enum(["magicblock_live", "local_fallback"]);
+
+export const RoomAuthorityStatusSchema = z
+  .object({
+    mode: RoomAuthorityModeSchema,
+    movementAuthority: z.literal("room_server"),
+    combatAuthority: z.enum(["magicblock_router", "room_server"]),
+    raidIdHex: z.string().regex(/^[0-9a-fA-F]{32}$/),
+    raidStatePda: SolanaAddressSchema,
+    settlementRecordPda: SolanaAddressSchema.optional(),
+    playerCount: z
+      .number()
+      .int()
+      .min(GAME_LIMITS.players.min)
+      .max(GAME_LIMITS.players.max)
+      .optional(),
+    lastReconciledAtMs: z.number().int().min(0).optional(),
+    lastSignature: z.string().trim().min(64).max(128).optional(),
+    lastError: z.string().trim().min(1).max(180).optional()
+  })
+  .strict();
+
 export const RoomDisplayNameSchema = z.string().trim().min(1).max(32);
 
 export const PositionSchema = z
@@ -147,7 +169,10 @@ export const PlayerContributionSchema = z
     objective: z.number().int().min(0).max(GAME_LIMITS.scoring.maxComponent),
     total: z.number().int().min(0).max(GAME_LIMITS.scoring.maxTotal)
   })
-  .strict();
+  .strict()
+  .refine((contribution) => contribution.total === contributionComponentTotal(contribution), {
+    message: "contribution total must equal bounded component sum"
+  });
 
 export const PlayerStateSchema = z
   .object({
@@ -283,7 +308,8 @@ export const RaidSnapshotSchema = z
 export const RaidSnapshotMessageSchema = z
   .object({
     type: z.literal("raid_snapshot"),
-    snapshot: RaidSnapshotSchema
+    snapshot: RaidSnapshotSchema,
+    authority: RoomAuthorityStatusSchema.optional()
   })
   .strict();
 
@@ -328,7 +354,8 @@ export const RoomSessionSchema = z
   .object({
     roomCode: RoomCodeSchema,
     playerId: EntityIdSchema,
-    snapshot: RaidSnapshotSchema
+    snapshot: RaidSnapshotSchema,
+    authority: RoomAuthorityStatusSchema.optional()
   })
   .strict();
 
@@ -435,6 +462,7 @@ export const RoomStrategyRequestSchema = z
 export const RoomStrategyUpdateSchema = z
   .object({
     snapshot: RaidSnapshotSchema,
+    authority: RoomAuthorityStatusSchema.optional(),
     analytics: RaidAnalyticsSummarySchema,
     lastDecision: BossStrategyDecisionSchema.optional(),
     adaptationCount: z
@@ -456,7 +484,10 @@ export const SettlementContributionSchema = z
     objective: z.number().int().min(0).max(GAME_LIMITS.scoring.maxComponent),
     total: z.number().int().min(0).max(GAME_LIMITS.scoring.maxTotal)
   })
-  .strict();
+  .strict()
+  .refine((contribution) => contribution.total === contributionComponentTotal(contribution), {
+    message: "settlement total must equal bounded component sum"
+  });
 
 export const SettlementSummarySchema = z
   .object({
@@ -471,6 +502,24 @@ export const SettlementSummarySchema = z
       .array(SettlementContributionSchema)
       .min(GAME_LIMITS.players.min)
       .max(GAME_LIMITS.players.max)
+  })
+  .strict();
+
+export const SettlementSubmissionRequestSchema = z
+  .object({
+    playerId: EntityIdSchema
+  })
+  .strict();
+
+export const RoomSettlementStatusSchema = z
+  .object({
+    status: z.enum(["idle", "pending", "success", "failed", "local_verified"]),
+    summary: SettlementSummarySchema.optional(),
+    transactionSignature: z.string().trim().min(64).max(128).optional(),
+    explorerUrl: z.string().url().optional(),
+    settlementRecordPda: SolanaAddressSchema.optional(),
+    message: z.string().trim().min(1).max(180).optional(),
+    authority: RoomAuthorityStatusSchema.optional()
   })
   .strict();
 
@@ -493,6 +542,8 @@ export type GameLimits = typeof GAME_LIMITS;
 export type PlayerClass = z.infer<typeof PlayerClassSchema>;
 export type RaidStatus = z.infer<typeof RaidStatusSchema>;
 export type RaidResult = z.infer<typeof RaidResultSchema>;
+export type RoomAuthorityMode = z.infer<typeof RoomAuthorityModeSchema>;
+export type RoomAuthorityStatus = z.infer<typeof RoomAuthorityStatusSchema>;
 export type BossStrategy = z.infer<typeof BossStrategySchema>;
 export type BossPhase = z.infer<typeof BossPhaseSchema>;
 export type PlayerCombatStatus = z.infer<typeof PlayerCombatStatusSchema>;
@@ -524,4 +575,18 @@ export type RoomStrategyRequest = z.infer<typeof RoomStrategyRequestSchema>;
 export type RoomStrategyUpdate = z.infer<typeof RoomStrategyUpdateSchema>;
 export type SettlementContribution = z.infer<typeof SettlementContributionSchema>;
 export type SettlementSummary = z.infer<typeof SettlementSummarySchema>;
+export type SettlementSubmissionRequest = z.infer<typeof SettlementSubmissionRequestSchema>;
+export type RoomSettlementStatus = z.infer<typeof RoomSettlementStatusSchema>;
 export type RaidSummary = z.infer<typeof RaidSummarySchema>;
+
+function contributionComponentTotal(contribution: {
+  damage: number;
+  support: number;
+  survival: number;
+  objective: number;
+}) {
+  return Math.min(
+    GAME_LIMITS.scoring.maxTotal,
+    contribution.damage + contribution.support + contribution.survival + contribution.objective
+  );
+}

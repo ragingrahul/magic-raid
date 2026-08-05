@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "magicblock:smoke": "node scripts/magicblock-smoke.mjs",
-    "magicblock:live-smoke": "node scripts/magicblock-live-smoke.mjs"
+    "magicblock:live-smoke": "node scripts/magicblock-live-smoke.mjs",
+    "magicblock:settlement-smoke": "node scripts/magicblock-settlement-smoke.mjs"
   },
   "dependencies": {
     "@magicblock-labs/ephemeral-rollups-sdk": "0.16.2",

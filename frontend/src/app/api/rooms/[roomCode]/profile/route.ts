@@ -18,7 +18,7 @@ export async function PATCH(request: Request, context: RoomProfileRouteContext) 
   try {
     const { roomCode } = await context.params;
     const body = await readJsonBody(request);
-    const room = getRoomOrThrow(roomCode.toUpperCase());
+    const room = await getRoomOrThrow(roomCode.toUpperCase());
 
     return NextResponse.json(updateRoomProfile(room, body));
   } catch (error) {

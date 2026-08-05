@@ -13,8 +13,9 @@ const RAID_SETTLEMENT_PROGRAM_ID = new PublicKey(
   "2644KGiENvPpHYbktoMUz2y6TWeQsxz8MpcRhmrakW72"
 );
 const RAID_STATE_SEED = "raid-state";
+const RAID_ID = new TextEncoder().encode("magicraid:SMOKE0");
 const [raidStatePda, bump] = PublicKey.findProgramAddressSync(
-  [new TextEncoder().encode(RAID_STATE_SEED)],
+  [new TextEncoder().encode(RAID_STATE_SEED), RAID_ID],
   RAID_SETTLEMENT_PROGRAM_ID
 );
 
@@ -44,6 +45,7 @@ const [closestValidator, delegationStatus, solanaDevnetVersion, erAsiaVersion] =
 
 const result = {
   programId: RAID_SETTLEMENT_PROGRAM_ID.toBase58(),
+  raidId: Buffer.from(RAID_ID).toString("hex"),
   raidStatePda: raidStatePda.toBase58(),
   bump,
   expectedAsiaValidator: MAGICBLOCK_DEVNET.asiaValidator,

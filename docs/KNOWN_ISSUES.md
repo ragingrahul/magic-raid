@@ -71,7 +71,7 @@ Escalate if:
 ## KI-005: AI API May Fail During Demo
 
 Severity: medium.
-Status: open.
+Status: open, mitigated by Day 6 settlement flow.
 
 Issue: LLM calls can time out, return invalid JSON, hit rate limits, or fail due to missing secrets.
 
@@ -106,8 +106,10 @@ Status: open.
 Issue: wallet setup, devnet congestion, RPC issues, or program deployment problems could block live settlement.
 
 Mitigation:
-- Build visible pending/success/failure states.
-- Rehearse settlement before demo.
+- Day 6 added visible pending, success, failure, and local-verified settlement states.
+- Day 6 added direct devnet settlement transaction construction and server-side signing support.
+- `MAGICRAID_SETTLEMENT_MODE=local` can be used for local-verified rehearsal without pretending a devnet transaction landed.
+- Rehearse live settlement after the room MagicBlock `RaidState` reaches victory, defeat, or timeout.
 - Keep transaction data small.
 
 Escalate if:
@@ -121,7 +123,8 @@ Status: open.
 Issue: LLM API keys, Solana RPC URLs, MagicBlock configuration, and Vercel environment variables are not defined.
 
 Mitigation:
-- `frontend/.env.example` documents the server-side OpenAI strategy variables.
+- `frontend/.env.example` documents the server-side OpenAI strategy variables and the Day 6 room/MagicBlock/settlement authority variables.
+- `frontend/README.md` documents local versus live values for `MAGICRAID_ROOM_STATE`, `MAGICRAID_ROOM_KEYPAIR`, `MAGICRAID_MAGICBLOCK_AUTHORITY`, `MAGICRAID_MAGICBLOCK_KEYPAIR`, `MAGICRAID_SETTLEMENT_MODE`, and `MAGICRAID_SETTLEMENT_KEYPAIR`.
 - Never commit secrets.
 - Add deployment checklist under `DEMO-001`.
 
@@ -137,7 +140,8 @@ Issue: judges may miss the distinction between local rendering, MagicBlock autho
 
 Mitigation:
 - `WEB-003` analytics and strategy panel is implemented.
-- Add settlement status UI.
+- Day 6 added the `Authority` panel showing `magicblock_live` versus `local_fallback` and combat/movement authority.
+- Day 6 added the `Settlement` panel showing pending, success, failure, local-verified, explorer, and settlement-record states.
 - Use `DEMO-001` script to call out proof points.
 
 Escalate if:
@@ -201,21 +205,24 @@ Mitigation:
 Escalate if:
 - Future dependency updates require upgrading Solana CLI, Anchor CLI, or the SBF toolchain.
 
-## KI-014: Day 4 Room Authority Is In-Memory
+## KI-014: Room Snapshot Cache Is Transient
 
 Severity: medium.
-Status: open, non-blocking for local Day 4 demo.
+Status: open, mitigated by on-chain room roster storage and Day 6 MagicBlock routing.
 
-Issue: the Day 4 create/join room flow uses in-memory Next route handlers as the local authoritative snapshot service. It validates client input, shares snapshots across browser clients, supports reconnect by room code plus player id, and is adequate for local demo smoke tests, but room state resets when the Next process restarts and does not yet route every gameplay input through the MagicBlock `RaidState` PDA.
+Issue: live/on-chain room create and join now write the canonical roster wallets/classes to the per-room `RaidState` PDA, and combat-critical state is reconciled from MagicBlock/Solana. The in-memory Next route store is no longer the canonical roster source; it is a cache for reconstructed snapshots, display names, high-frequency movement positions, cooldown interpolation, analytics, and UI/session convenience. A Next process restart can recover the on-chain roster and combat state by room code, but it cannot perfectly recover transient visual positions, local display names, uncommitted analytics history, or client session ids.
 
 Mitigation:
-- Keep the limitation visible in `docs/PROGRESS.md`.
-- Use the verified `MB-004` MagicBlock lifecycle smoke as the proof that the compact `RaidState` can be initialized, delegated, mutated, committed, undelegated, and read back on devnet.
-- During `SOL-003` or a dedicated networking hardening pass, replace or augment the in-memory room authority with a durable service and connect final gameplay mutations to the MagicBlock path.
+- Keep the split visible in `docs/PROGRESS.md` and `docs/ARCHITECTURE.md`.
+- Use `MAGICRAID_ROOM_STATE=onchain` or `MAGICRAID_MAGICBLOCK_AUTHORITY=live` so room create/join/read use the on-chain `RaidState`.
+- Use `npm run magicblock:live-smoke` as the proof that a compact per-room `RaidState` can initialize a roster, accept joins, delegate, mutate, commit, undelegate, and read back on devnet.
+- Use `npm run magicblock:settlement-smoke` as the proof that a live MagicBlock victory can be committed and settled to a Solana devnet `SettlementRecord`.
+- Set `MAGICRAID_MAGICBLOCK_AUTHORITY=live` only when the server authority keypair is funded.
+- For production, add a durable web snapshot service or indexer-backed recovery layer for display names, session ids, movement snapshots, analytics, and demo convenience state. Do not write every movement frame to Solana; keep high-frequency visuals off-chain and only keep settlement-critical state on-chain.
 
 Escalate if:
 - The demo target requires cross-device hosted rooms before a production room service is implemented.
-- The Day 6 settlement flow needs room state after a server restart.
+- The demo needs exact visual position/display-name recovery after a server restart.
 
 ## KI-015: MagicBlock Rust SDK Needs Local SBF Compatibility Patch
 
@@ -244,15 +251,24 @@ Issue: MagicBlock public devnet, Magic Router, ER Asia, Solana devnet, validator
 
 Latest verification:
 - `MB-004` live devnet lifecycle smoke passed on 2026-08-04: deploy, initialize, delegate, `isDelegated: true`, router-routed hit, commit/undelegate, `isDelegated: false`, and final devnet state readback all succeeded.
+- Day 6 program upgrade and live lifecycle smoke passed on 2026-08-05. Upgrade signature: `HoqHTGQPizF2Mc3nw9b8KTguuDzd5Ki74MDk8cr1YLczBaGggHG7Kgjf92fLsCo65Ugus8QKGobpdxNgFqxgbSN`. The latest smoke delegated, applied a router-routed hit, committed/undelegated, and read back boss HP `1198` with player 0 contribution damage `2`.
+- Per-room PDA upgrade passed on 2026-08-05. Upgrade signature: `4UkVQ6SuLoCVedQS7ErvgUJNzPR5EJokpa3JK2GhUJHc98SYvNveoKhRWu1Bq1QDqbm4yUL3JEt4s5CxrwukeWP5`.
+- On-chain roster upgrade passed on 2026-08-05. Upgrade signature: `3isDCxHpMzmg9U3CiSqogfyXXr6f47qtkfd9d5wHZi8dxEMgWKBtrbX7qhiwiMTiyjvYJQwjBsnyhQWfat6qWgjb`.
+- `npm run magicblock:live-smoke` passed on 2026-08-05 after the roster upgrade: fresh `RaidState` PDA `BkW4aqdSvegv9nGauq7SogGhWvUekyHpqTdpNh8JUL7c` initialized a host roster slot, joined three more players, delegated, accepted a router-routed hit, committed/undelegated, and read back player count `4`.
+- `npm run magicblock:settlement-smoke` passed on 2026-08-05: fresh `RaidState` PDA `3xMwHCbt9T4ZatRtKWFom4DYfSP8hC2o22BsGMLVp3hy` reached victory through Magic Router, committed/undelegated, submitted `settle_raid` with signature `5cN6pZX7hr5JYoLLegaH4fno4FJ8WTb7K1AseexapSpWDtFYi4rRUAbb7smLAqDFgeCubbjS2HdibHUEWMzLxC3U`, and read back settlement record `AweyYGi7HCZSocsP44qS9rmg7N7XELo9G3iyhvrR6F2h`.
+- Live app API smoke passed on 2026-08-05: room `VGKZBN` wrote host and guest wallets to the on-chain roster, derived per-room `RaidState` PDA `EdJfo4vwhtsCr6yqD363GNScC8q7Js2b5iZxcBveswn6`, routed a combat hit through Magic Router signature `2cKn81c5vtAsgyVrTupt8ohugbYAdGHxx9fBfRecqDLLYWrZQbrn5qpi6F3DAPjQ76h8mHPkPE5NMWVgTnUn3tCa`, reconciled boss HP to `1176`, and then committed/undelegated the smoke PDA with signature `21eDPCiCVyH7wTHRqaiHyYEgCVvn4YUhAXuQiUhRHJEqZfSKwuf9BHcGBzcwr3x39rJaZAE2wNGK7qn2NFvjGW4g`.
+- Two early router mutations after the roster upgrade returned Anchor `ConstraintSeeds` (`0x7d6`) while the MagicBlock ER validator appeared to still have the previous program cache. A later retry passed without code changes, matching the earlier per-room PDA upgrade cache-refresh pattern.
 
 Mitigation:
 - MagicBlock smoke command: run `zsh -lic 'npm run magicblock:smoke'` from `frontend/` before demos and after dependency changes.
 - Live lifecycle smoke command: run `zsh -lic 'npm run magicblock:live-smoke'` from `frontend/` before claiming the deployed program path still works.
+- Live settlement smoke command: run `zsh -lic 'npm run magicblock:settlement-smoke'` from `frontend/` before claiming end-to-end devnet settlement.
 - If MagicBlock smoke cannot reach Magic Router or ER Asia, fall back to Solana devnet/local deterministic state in the UI and do not claim live ER authority until smoke passes again.
 - If `getClosestValidator` returns a validator other than `MAS1Dt9qreoRMQ14YQuhg8UTZMMzDdKhmkZMECCzk57`, record the value and confirm whether router geography changed before hardcoding assumptions.
 - If `getDelegationStatus` returns `isDelegated: false` for the `RaidState` PDA before a live delegate transaction, treat that as normal readiness, not a failure.
-- If `getDelegationStatus` returns `isDelegated: false` after a delegate transaction, verify the program id, PDA seed `raid-state`, authority wallet, funding, and the validator remaining account used by `delegate_raid`.
+- If `getDelegationStatus` returns `isDelegated: false` after a delegate transaction, verify the program id, PDA seeds `[raid-state, raid_id]`, authority wallet, funding, and the validator remaining account used by `delegate_raid`.
 - If gameplay mutation fails after delegation, route transactions through Magic Router and verify the signer is the stored `RaidState.authority`.
+- If gameplay mutation returns `ConstraintSeeds` immediately after a devnet program upgrade, wait for the ER validator cache to refresh, retry the live smoke, and clean up any delegated smoke PDA with `commit_and_undelegate_raid`.
 - If `commit_raid` or `commit_and_undelegate_raid` fails, surface a pending settlement state, keep the final local/ER snapshot visible, retry `commit_raid` first, and only show final settlement after base-layer state is readable.
 - If shell startup warnings appear under `zsh -lic` but the command exits 0, treat them as non-blocking local shell initialization noise.
 
@@ -275,3 +291,20 @@ Mitigation:
 
 Escalate if:
 - A different machine must upgrade the same devnet program and cannot access the current upgrade authority/keypair setup.
+
+## KI-018: Fixed RaidState PDA Limits Live Multi-Room Authority
+
+Severity: medium.
+Status: resolved on 2026-08-05.
+
+Issue: the original verified MagicBlock spike used one fixed `RaidState` PDA at seed `raid-state`. That would have made simultaneous live rooms share one MagicBlock authoritative state.
+
+Mitigation:
+- The Anchor program now derives `RaidState` from `[raid-state, raid_id]`.
+- The frontend maps room codes to 16-byte raid ids with `magicraid:${ROOM_CODE}`.
+- Live combat initializes and delegates the room PDA on demand, reconciles Magic Router readbacks, and settlement derives the matching `SettlementRecord` PDA from that room PDA.
+- Live create records the host wallet/class in slot 0, and `join_raid` appends additional wallets/classes to the same room PDA until combat has started.
+
+Escalate if:
+- The demo must allow joins after combat damage has already been recorded on the live `RaidState`.
+- Judges require production-style snapshot/session persistence beyond on-chain roster recovery.

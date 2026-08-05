@@ -1,7 +1,8 @@
 import { RaidRoom } from "@/components/raid-room";
 import {
   deriveRaidStatePda,
-  MAGICBLOCK_DEVNET
+  MAGICBLOCK_DEVNET,
+  roomCodeToRaidId
 } from "@/lib/magicblock";
 
 const pillars = [
@@ -11,7 +12,7 @@ const pillars = [
 ];
 
 export default function Home() {
-  const [raidStatePda] = deriveRaidStatePda();
+  const [sampleRoomRaidStatePda] = deriveRaidStatePda(roomCodeToRaidId("DEMO00"));
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 text-foreground md:px-6 lg:px-8">
@@ -27,8 +28,8 @@ export default function Home() {
               </h1>
             </div>
             <div className="rounded-md border border-border px-3 py-2 text-sm">
-              <span className="font-mono tabular-nums">DAY-05</span>
-              <span className="ml-2 text-muted-foreground">ai</span>
+              <span className="font-mono tabular-nums">DAY-006</span>
+              <span className="ml-2 text-muted-foreground">settlement</span>
             </div>
           </div>
 
@@ -68,18 +69,18 @@ export default function Home() {
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">RaidState PDA</dt>
+                <dt className="text-muted-foreground">Sample Room PDA</dt>
                 <dd className="mt-1 break-all font-mono text-xs">
-                  {raidStatePda.toBase58()}
+                  {sampleRoomRaidStatePda.toBase58()}
                 </dd>
               </div>
             </dl>
           </div>
 
           <div className="rounded-md border border-border bg-card p-4 text-card-foreground md:p-6">
-            <h2 className="text-xl font-semibold">Next Work</h2>
+            <h2 className="text-xl font-semibold">Day 6 Checks</h2>
             <div className="mt-4 grid gap-3">
-              {["NET-003 MagicBlock room authority", "SOL-002 settlement instruction", "SOL-003 settlement client"].map(
+              {["Per-room devnet PDA", "Settlement instruction wired", "Critical constraints tested"].map(
                 (item) => (
                   <div
                     key={item}

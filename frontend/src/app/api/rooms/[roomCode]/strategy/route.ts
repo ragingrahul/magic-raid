@@ -18,7 +18,7 @@ export async function POST(request: Request, context: RoomStrategyRouteContext) 
   try {
     const { roomCode } = await context.params;
     const body = await readJsonBody(request);
-    const room = getRoomOrThrow(roomCode.toUpperCase());
+    const room = await getRoomOrThrow(roomCode.toUpperCase());
 
     return NextResponse.json(await adaptRoomStrategy(room, body));
   } catch (error) {

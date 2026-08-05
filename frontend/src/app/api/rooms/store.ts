@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import {
+  createRoomAuthorityFromOnChain,
+  ensureRoomRuntimeState,
   RoomAuthorityError,
   type RoomAuthorityState
 } from "@/game/room-authority";
 import { RaidErrorMessageSchema } from "@/game/schemas";
+import {
+  onChainRoomStateEnabled,
+  readOnChainRoom
+} from "@/lib/room-chain";
 
 type RoomStoreGlobal = typeof globalThis & {
   __magicRaidRooms?: Map<string, RoomAuthorityState>;
@@ -25,13 +31,32 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-export function getRoomOrThrow(roomCode: string): RoomAuthorityState {
+export async function getRoomOrThrow(roomCode: string): Promise<RoomAuthorityState> {
   const room = roomStore.get(roomCode);
   if (!room) {
+    if (onChainRoomStateEnabled()) {
+      try {
+        const onChainRoom = await readOnChainRoom(roomCode);
+        if (onChainRoom) {
+          const reconstructed = createRoomAuthorityFromOnChain(roomCode, onChainRoom);
+          roomStore.set(roomCode, reconstructed);
+          return reconstructed;
+        }
+      } catch (error) {
+        throw new RoomAuthorityError(
+          "room_chain_unavailable",
+          error instanceof Error
+            ? error.message
+            : "Could not read the on-chain room state.",
+          503
+        );
+      }
+    }
+
     throw new RoomAuthorityError("room_not_found", "Room code is invalid or expired.", 404);
   }
 
-  return room;
+  return ensureRoomRuntimeState(room);
 }
 
 export function roomErrorResponse(error: unknown) {
