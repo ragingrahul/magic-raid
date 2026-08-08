@@ -17,6 +17,7 @@ import {
   type BossStrategyDecision,
   type BossStrategy,
   type PlayerAttackKind,
+  type RaidClientMessage,
   type PlayerClass,
   type Position,
   type RoomAuthorityStatus,
@@ -135,6 +136,7 @@ export function RaidRoom() {
   const clientSequenceRef = useRef(0);
   const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const inputBusyRef = useRef(false);
+  const pendingMoveRef = useRef<RaidClientMessage | null>(null);
 
   const currentPlayer = useMemo(
     () => snapshot?.players.find((player) => player.id === session?.playerId),
@@ -402,48 +404,64 @@ export function RaidRoom() {
     }
   }
 
+  const dispatchInput = useCallback((roomCode: string, validated: RaidClientMessage) => {
+    inputQueueRef.current = inputQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        inputBusyRef.current = true;
+        try {
+          const response = await fetch(`/api/rooms/${roomCode}/input`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(validated)
+          });
+          const payload = await parseJsonResponse(response);
+          const parsed = RaidSnapshotMessageSchema.parse(payload);
+          setSnapshot((current) =>
+            current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
+          );
+          setAuthorityStatus(parsed.authority ?? null);
+          setSyncError(null);
+        } catch (error) {
+          setSyncError(error instanceof Error ? error.message : "Input was rejected.");
+        } finally {
+          inputBusyRef.current = false;
+          // A move that arrived while this request was in flight was coalesced
+          // instead of dropped (see sendInput below) — flush it immediately so
+          // held movement keys don't stall until the next poll tick.
+          const pendingMove = pendingMoveRef.current;
+          if (pendingMove) {
+            pendingMoveRef.current = null;
+            dispatchInput(roomCode, pendingMove);
+          }
+        }
+      });
+  }, []);
+
   const sendInput = useCallback(
     (message: unknown) => {
       if (!session) {
         return;
       }
 
+      let validated: RaidClientMessage;
       try {
-        const validated = RaidClientMessageSchema.parse(message);
-        if (validated.type === "player_move" && inputBusyRef.current) {
-          return;
-        }
-
-        inputQueueRef.current = inputQueueRef.current
-          .catch(() => undefined)
-          .then(async () => {
-            inputBusyRef.current = true;
-            try {
-              const response = await fetch(`/api/rooms/${session.roomCode}/input`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify(validated)
-              });
-              const payload = await parseJsonResponse(response);
-              const parsed = RaidSnapshotMessageSchema.parse(payload);
-              setSnapshot((current) =>
-                current && current.tick > parsed.snapshot.tick ? current : parsed.snapshot
-              );
-              setAuthorityStatus(parsed.authority ?? null);
-              setSyncError(null);
-            } catch (error) {
-              setSyncError(error instanceof Error ? error.message : "Input was rejected.");
-            } finally {
-              inputBusyRef.current = false;
-            }
-          });
+        validated = RaidClientMessageSchema.parse(message);
       } catch (error) {
         setSyncError(error instanceof Error ? error.message : "Input was rejected.");
+        return;
       }
+
+      if (validated.type === "player_move" && inputBusyRef.current) {
+        pendingMoveRef.current = validated;
+        return;
+      }
+
+      dispatchInput(session.roomCode, validated);
     },
-    [session]
+    [dispatchInput, session]
   );
 
   const sendMove = useCallback(

@@ -147,7 +147,7 @@ describe("NET-001 room snapshots", () => {
     expect(() => applyRoomInput(room, input, 30_200)).toThrow(RoomAuthorityError);
   });
 
-  it("reconciles combat-critical attacks from a MagicBlock authority readback", async () => {
+  it("returns immediately with the local hit and reconciles the MagicBlock authority readback in the background", async () => {
     const room = createRoomAuthority(hostProfile, {
       roomCode: "MBLIVE",
       nowUnixMs: 60_000
@@ -186,8 +186,18 @@ describe("NET-001 room snapshots", () => {
       }
     );
 
-    expect(snapshot.boss.hp).toBe(1_100);
-    expect(snapshot.players[0].contribution.damage).toBe(100);
+    // The response must not block on the on-chain confirmation: it reflects
+    // the already-resolved local hit, not yet the readback.
+    expect(snapshot.boss.hp).not.toBe(1_100);
+    expect(room.authority.mode).toBe("local_fallback");
+
+    // The readback reconciles shortly after, off the request/response path.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(room.snapshot.boss.hp).toBe(1_100);
+    expect(room.snapshot.players[0].contribution.damage).toBe(100);
     expect(room.authority.mode).toBe("magicblock_live");
     expect(room.authority.combatAuthority).toBe("magicblock_router");
   });

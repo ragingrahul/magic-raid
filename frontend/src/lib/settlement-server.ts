@@ -29,14 +29,21 @@ import {
   MAGICBLOCK_DEVNET,
   RAID_SETTLEMENT_PROGRAM_ID
 } from "@/lib/magicblock";
+import { decodeRaidStateAccount } from "@/lib/room-chain";
 import {
   buildSettleRaidTransaction,
-  settlementExplorerUrl
+  settlementExplorerUrl,
+  RAID_RESULT_INDEX
 } from "@/lib/settlement";
 
 const COMMIT_AND_UNDELEGATE_RAID_DISCRIMINATOR = Buffer.from([
   210, 80, 139, 197, 32, 249, 30, 199
 ]);
+// sha256("global:finalize_raid")[0..8] — brings RaidState.lifecycle from Active
+// to a terminal state on-chain when the local raid ended in a way that never
+// routed a hit through MagicBlock (e.g. a Defeat from the boss's own attacks,
+// or a Timeout the boss's tick decided rather than a player hit).
+const FINALIZE_RAID_DISCRIMINATOR = Buffer.from([149, 188, 177, 247, 200, 129, 0, 166]);
 
 export async function submitSettlementSummary(
   rawSummary: SettlementSummary,
@@ -65,6 +72,7 @@ export async function submitSettlementSummary(
     });
     const connection = new Connection(MAGICBLOCK_DEVNET.solanaDevnetRpc, "confirmed");
     await commitAndUndelegateRoomRaidState(raidStatePda, authority);
+    await ensureRaidStateFinalized(connection, authority, raidStatePda, summary);
     const transaction = buildSettleRaidTransaction(summary, authority.publicKey, {
       raidIdHex: authorityStatus?.raidIdHex
     });
@@ -118,6 +126,57 @@ async function commitAndUndelegateRoomRaidState(
     skipPreflight: false
   });
   await waitForUndelegation(routerConnection, raidStatePda);
+}
+
+// Local raid resolution (rules.ts) can reach victory/defeat/timeout without
+// ever calling apply_player_hit on-chain (e.g. defeat comes from the boss's
+// own attack tick, not a player hit). Bring RaidState.lifecycle from Active to
+// the matching terminal state before settle_raid runs, or it fails with
+// RaidNotTerminal. Skipped when already terminal (finalize_raid requires
+// Active and is not re-callable) or when the account was never initialized
+// on-chain, in which case settle_raid will surface its own account error.
+async function ensureRaidStateFinalized(
+  connection: Connection,
+  authority: Keypair,
+  raidStatePda: PublicKey,
+  summary: SettlementSummary
+) {
+  const accountInfo = await connection.getAccountInfo(raidStatePda);
+  const state = decodeRaidStateAccount(accountInfo);
+
+  if (!state || state.lifecycle !== "active") {
+    return;
+  }
+
+  const elapsedDeltaSeconds = clampU16(summary.durationSeconds - state.elapsedSeconds);
+  const transaction = new Transaction().add(
+    finalizeRaidInstruction(authority.publicKey, raidStatePda, summary.result, elapsedDeltaSeconds)
+  );
+  transaction.feePayer = authority.publicKey;
+  await sendAndConfirmTransaction(connection, transaction, [authority], {
+    commitment: "confirmed",
+    skipPreflight: false
+  });
+}
+
+function finalizeRaidInstruction(
+  authority: PublicKey,
+  raidStatePda: PublicKey,
+  result: SettlementSummary["result"],
+  elapsedDeltaSeconds: number
+) {
+  return new TransactionInstruction({
+    programId: RAID_SETTLEMENT_PROGRAM_ID,
+    keys: [
+      { pubkey: raidStatePda, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: false }
+    ],
+    data: Buffer.concat([
+      FINALIZE_RAID_DISCRIMINATOR,
+      Buffer.from([RAID_RESULT_INDEX[result]]),
+      u16le(elapsedDeltaSeconds)
+    ])
+  });
 }
 
 function commitAndUndelegateRaidInstruction(authority: PublicKey, raidStatePda: PublicKey) {
@@ -188,6 +247,16 @@ function expandHomePath(path: string) {
   }
 
   return resolve(path);
+}
+
+function clampU16(value: number): number {
+  return Math.max(0, Math.min(65_535, Math.trunc(value)));
+}
+
+function u16le(value: number): Buffer {
+  const buffer = Buffer.alloc(2);
+  buffer.writeUInt16LE(clampU16(value), 0);
+  return buffer;
 }
 
 function truncateMessage(message: string, maxLength = 180) {

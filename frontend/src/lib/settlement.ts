@@ -22,7 +22,7 @@ export const SETTLE_RAID_DISCRIMINATOR = Buffer.from([
   29, 86, 124, 165, 207, 146, 238, 155
 ]);
 
-const RAID_RESULT_INDEX: Record<RaidResult, number> = {
+export const RAID_RESULT_INDEX: Record<RaidResult, number> = {
   victory: 0,
   defeat: 1,
   timeout: 2

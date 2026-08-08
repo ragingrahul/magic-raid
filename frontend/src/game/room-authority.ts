@@ -54,6 +54,11 @@ import {
 } from "@/lib/magicblock";
 
 const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// Per-room chain of pending critical-authority (on-chain) confirmations, kept
+// outside RoomAuthorityState so it never has to survive structuredClone
+// (cloneRoomAuthority) and so callers never wait on it — see
+// enqueueCriticalAuthorityCall.
+const criticalAuthorityQueues = new Map<string, Promise<void>>();
 const DEFAULT_MOVE_DELTA_MS = 90;
 const MAX_MOVE_DELTA_MS = 180;
 const PLAYER_STARTS = [
@@ -373,25 +378,41 @@ export async function applyRoomInputWithCriticalAuthority(
   const application = applyRoomInputInternal(room, rawMessage, nowUnixMs);
 
   if (application.criticalMutation && criticalAuthority) {
-    try {
-      const readback = await criticalAuthority.applyPlayerHit(application.criticalMutation);
-      reconcileCriticalAuthorityReadback(room, readback, roomTimeMs(room, nowUnixMs));
-    } catch (error) {
-      reconcileCriticalAuthorityReadback(
-        room,
-        {
-          ...createFallbackAuthorityReadback(
-            application.criticalMutation.roomCode,
-            application.criticalMutation.playerCount
-          ),
-          error: error instanceof Error ? error.message : "MagicBlock authority failed."
-        },
-        roomTimeMs(room, nowUnixMs)
-      );
-    }
+    // Local combat resolution above is already authoritative for what the
+    // player sees; a live devnet confirmation can take 1-3+ seconds and must
+    // never hold this response open, or every movement tick sent while it's
+    // in flight gets dropped client-side. Reconcile the on-chain readback in
+    // the background instead, once it lands.
+    enqueueCriticalAuthorityCall(room, application.criticalMutation, criticalAuthority);
   }
 
   return raidSnapshotMessage(room.snapshot, room.authority).snapshot;
+}
+
+function enqueueCriticalAuthorityCall(
+  room: RoomAuthorityState,
+  mutation: CriticalCombatMutation,
+  criticalAuthority: CriticalAuthorityAdapter
+) {
+  const previous = criticalAuthorityQueues.get(room.roomCode) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => criticalAuthority.applyPlayerHit(mutation))
+    .then((readback) => {
+      reconcileCriticalAuthorityReadback(room, readback, roomTimeMs(room, Date.now()));
+    })
+    .catch((error) => {
+      reconcileCriticalAuthorityReadback(
+        room,
+        {
+          ...createFallbackAuthorityReadback(mutation.roomCode, mutation.playerCount),
+          error: error instanceof Error ? error.message : "MagicBlock authority failed."
+        },
+        roomTimeMs(room, Date.now())
+      );
+    });
+
+  criticalAuthorityQueues.set(room.roomCode, next);
 }
 
 function applyRoomInputInternal(
